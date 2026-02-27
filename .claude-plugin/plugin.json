@@ -1,6 +1,6 @@
 {
   "name": "reqall",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Persistent semantic knowledgebase for AI agents",
   "author": {
     "name": "ReqallSystem"
@@ -13,6 +13,5 @@
     "issues",
     "specifications"
   ],
-  "hooks": "./hooks/hooks.json",
   "mcpServers": "./mcp-servers.json"
 }
