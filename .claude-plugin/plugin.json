@@ -2,6 +2,17 @@
   "name": "reqall",
   "version": "0.0.4",
   "description": "Persistent semantic knowledgebase for AI agents",
+  "author": {
+    "name": "ReqallSystem"
+  },
+  "license": "MIT",
+  "keywords": [
+    "rag",
+    "memory",
+    "project-context",
+    "issues",
+    "specifications"
+  ],
   "hooks": "./hooks/hooks.json",
   "mcpServers": "./mcp-servers.json"
 }

@@ -23,7 +23,7 @@
     "dist",
     "hooks/hooks.json",
     "skills",
-    "plugin.json",
+    ".claude-plugin",
     "mcp-servers.json"
   ],
   "license": "MIT"

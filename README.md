@@ -6,7 +6,8 @@ Automatically gleans context before prompts, classifies completed work, and save
 ## Installation
 
 ```
-/plugin install https://github.com/ReqallSystem/claude-plugin
+/plugin marketplace add ReqallSystem/plugins
+/plugin install reqall@reqall-plugins
 ```
 
 ## Setup
