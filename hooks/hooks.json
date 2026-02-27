@@ -1,20 +1,38 @@
 {
-  "hooks": [
-    {
-      "event": "UserPromptSubmit",
-      "type": "agent",
-      "command": "node dist/hooks/context.mjs"
-    },
-    {
-      "event": "Stop",
-      "type": "agent",
-      "command": "node dist/hooks/classify.mjs"
-    },
-    {
-      "event": "SubagentStop",
-      "matcher": "Plan",
-      "type": "agent",
-      "command": "node dist/hooks/plan.mjs"
-    }
-  ]
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node dist/hooks/context.mjs",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node dist/hooks/classify.mjs",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "Plan",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node dist/hooks/plan.mjs",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
 }
