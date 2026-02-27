@@ -1,0 +1,20 @@
+{
+  "hooks": [
+    {
+      "event": "UserPromptSubmit",
+      "type": "agent",
+      "command": "node dist/hooks/context.mjs"
+    },
+    {
+      "event": "Stop",
+      "type": "agent",
+      "command": "node dist/hooks/classify.mjs"
+    },
+    {
+      "event": "SubagentStop",
+      "matcher": "Plan",
+      "type": "agent",
+      "command": "node dist/hooks/plan.mjs"
+    }
+  ]
+}

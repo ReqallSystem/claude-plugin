@@ -1,0 +1,30 @@
+{
+  "name": "@reqall/claude-plugin",
+  "version": "0.0.4",
+  "description": "Reqall plugin for Claude Code — persistent semantic memory for AI agents",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "bin": {
+    "reqall-claude-plugin": "dist/src/index.js"
+  },
+  "scripts": {
+    "build": "tsc && node scripts/bundle-hooks.js",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@reqall/core": "^0.0.3"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.0",
+    "@types/node": "^22.0.0"
+  },
+  "files": [
+    "dist",
+    "hooks/hooks.json",
+    "skills",
+    "plugin.json",
+    "mcp-servers.json"
+  ],
+  "license": "MIT"
+}
