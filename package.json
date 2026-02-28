@@ -8,14 +8,13 @@
     "reqall-claude-plugin": "dist/src/index.js"
   },
   "scripts": {
-    "build": "tsc && node scripts/bundle-hooks.js",
+    "build": "tsc",
     "clean": "rm -rf dist"
   },
   "dependencies": {
     "@reqall/core": "file:../core"
   },
   "devDependencies": {
-    "esbuild": "^0.25.0",
     "typescript": "^5.8.0",
     "@types/node": "^22.0.0"
   },

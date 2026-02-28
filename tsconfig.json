@@ -15,5 +15,5 @@
     "rootDir": ".",
     "outDir": "dist"
   },
-  "include": ["hooks", "src"]
+  "include": ["src"]
 }

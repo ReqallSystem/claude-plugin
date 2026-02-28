@@ -5,13 +5,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node dist/hooks/setup.mjs",
-            "timeout": 30
-          },
-          {
-            "type": "command",
-            "command": "node dist/hooks/context.mjs",
-            "timeout": 60
+            "command": "echo '[reqall] Search reqall for context relevant to this prompt using reqall:search. Use the current git remote or directory name as the project_name parameter.'",
+            "timeout": 10
           }
         ]
       }
@@ -21,8 +16,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node dist/hooks/classify.mjs",
-            "timeout": 120
+            "command": "echo '[reqall] Invoke the reqall:classify skill to classify and persist the work done in this session.'",
+            "timeout": 10
           }
         ]
       }
@@ -33,8 +28,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node dist/hooks/plan.mjs",
-            "timeout": 120
+            "command": "echo '[reqall] A planning subagent completed. Save this plan as a spec record. Call reqall:upsert_project with the project name (from git remote or directory), then reqall:upsert_record with kind=spec, status=open, the plan title, and full plan as body.'",
+            "timeout": 10
           }
         ]
       }
