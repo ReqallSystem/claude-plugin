@@ -1,6 +1,6 @@
 {
   "name": "reqall",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "Persistent semantic knowledgebase for AI agents",
   "author": {
     "name": "ReqallSystem"

@@ -1,22 +1,15 @@
-// node_modules/@reqall/core/dist/config.js
-var DEFAULT_URL = "https://reqall.net";
-var DEFAULT_CONTEXT_LIMIT = 5;
-var DEFAULT_RECENCY_HOURS = 1;
+// ../core/dist/config.js
 function loadConfig() {
-  const apiKey = process.env.REQALL_API_KEY;
-  if (!apiKey) {
-    throw new Error("REQALL_API_KEY environment variable is required");
-  }
   return {
-    apiKey,
-    url: process.env.REQALL_URL || DEFAULT_URL,
+    apiKey: process.env.REQALL_API_KEY || void 0,
+    url: process.env.REQALL_URL || "https://reqall.net",
     projectName: process.env.REQALL_PROJECT_NAME || void 0,
-    contextLimit: parseInt(process.env.REQALL_CONTEXT_LIMIT || "", 10) || DEFAULT_CONTEXT_LIMIT,
-    recencyHours: parseInt(process.env.REQALL_RECENCY_HOURS || "", 10) || DEFAULT_RECENCY_HOURS
+    contextLimit: parseInt(process.env.REQALL_CONTEXT_LIMIT || "", 10) || 5,
+    recencyHours: parseInt(process.env.REQALL_RECENCY_HOURS || "", 10) || 1
   };
 }
 
-// node_modules/@reqall/core/dist/detect-project.js
+// ../core/dist/detect-project.js
 import { execSync } from "node:child_process";
 import { basename } from "node:path";
 function detectProject(cwd) {
@@ -41,8 +34,6 @@ function detectProject(cwd) {
 // dist/hooks/plan.js
 async function main() {
   try {
-    if (!process.env.REQALL_API_KEY?.trim())
-      process.exit(0);
     const config = loadConfig();
     const projectName = config.projectName || detectProject();
     const input = await new Promise((resolve) => {
