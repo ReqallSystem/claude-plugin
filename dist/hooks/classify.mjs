@@ -57,6 +57,8 @@ If the work created or modified relationships between records, also call reqall:
 // dist/hooks/classify.js
 async function main() {
   try {
+    if (!process.env.REQALL_API_KEY?.trim())
+      process.exit(0);
     const config = loadConfig();
     const projectName = config.projectName || detectProject();
     const input = await new Promise((resolve) => {

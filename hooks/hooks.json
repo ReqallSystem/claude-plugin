@@ -5,6 +5,11 @@
         "hooks": [
           {
             "type": "command",
+            "command": "node dist/hooks/setup.mjs",
+            "timeout": 30
+          },
+          {
+            "type": "command",
             "command": "node dist/hooks/context.mjs",
             "timeout": 60
           }
