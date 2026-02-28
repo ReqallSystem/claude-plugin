@@ -18,7 +18,7 @@ Set your Reqall API key as an environment variable:
 export REQALL_API_KEY="your-api-key"
 ```
 
-Optionally configure the server URL (defaults to `https://reqall.net`):
+Optionally configure the server URL (defaults to `https://www.reqall.net`):
 
 ```bash
 export REQALL_URL="https://reqall.net"
@@ -51,7 +51,7 @@ Connects to the Reqall API at `${REQALL_URL}/mcp` with bearer token auth, provid
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `REQALL_API_KEY` | (required) | API key for Reqall |
-| `REQALL_URL` | `https://reqall.net` | Reqall server URL |
+| `REQALL_URL` | `https://www.reqall.net` | Reqall server URL |
 | `REQALL_PROJECT_NAME` | auto-detected | Override project name |
 | `REQALL_CONTEXT_LIMIT` | `5` | Number of context results |
 | `REQALL_RECENCY_HOURS` | `1` | Time window for context |
