@@ -1,9 +1,11 @@
 {
-  "reqall": {
-    "type": "url",
-    "url": "${REQALL_URL:-https://reqall.net}/mcp",
-    "headers": {
-      "Authorization": "Bearer ${REQALL_API_KEY}"
+  "mcpServers": {
+    "reqall": {
+      "type": "http",
+      "url": "https://reqall.net/mcp",
+      "headers": {
+        "Authorization": "Bearer ${REQALL_API_KEY}"
+      }
     }
   }
 }

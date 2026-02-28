@@ -1,6 +1,6 @@
 {
   "name": "@reqall/claude-plugin",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "Reqall plugin for Claude Code — persistent semantic memory for AI agents",
   "type": "module",
   "main": "dist/src/index.js",
@@ -24,6 +24,7 @@
     "hooks/hooks.json",
     "skills",
     ".claude-plugin",
+    ".mcp.json",
     "mcp-servers.json"
   ],
   "license": "MIT"
