@@ -11,6 +11,9 @@ import { loadConfig, detectProject, CLASSIFICATION_PROMPT } from '@reqall/core';
 
 async function main() {
   try {
+    // Skip if API key is not configured (setup hook handles prompting)
+    if (!process.env.REQALL_API_KEY?.trim()) process.exit(0);
+
     const config = loadConfig();
     const projectName = config.projectName || detectProject();
 
