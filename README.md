@@ -30,17 +30,15 @@ export REQALL_URL="https://reqall.net"
 
 | Event | Hook | Description |
 |-------|------|-------------|
-| `UserPromptSubmit` | context | Searches Reqall for relevant context before the agent responds |
-| `Stop` | classify | Classifies completed work and persists it as a record |
+| `UserPromptSubmit` | context | Initializes the project, searches for relevant context, and lists open records |
+| `Stop` | persist | Classifies all completed work items and persists them as records with links |
 | `SubagentStop` (Plan) | plan | Saves planning output as a specification record |
 
 ### Skills
 
-- `/reqall:issues` — Create, list, search, and update issues
-- `/reqall:projects` — List projects, view records, manage context
-- `/reqall:specs` — Document requirements and architecture decisions
-- `/reqall:review-issues` — Interactive issue grooming session
-- `/reqall:review-specs` — Interactive spec review and validation
+- `/reqall:context` — Initialize project and gather relevant context before starting work
+- `/reqall:persist` — Classify and persist all work completed in a session
+- `/reqall:review` — Interactive review and triage of open records
 
 ### MCP Server
 

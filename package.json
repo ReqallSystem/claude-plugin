@@ -1,6 +1,6 @@
 {
   "name": "@reqall/claude-plugin",
-  "version": "2026.2.1",
+  "version": "2026.3.1",
   "description": "Reqall plugin for Claude Code — persistent semantic memory for AI agents",
   "type": "module",
   "main": "dist/src/index.js",
@@ -12,7 +12,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@reqall/core": "^2026.2.1"
+    "@reqall/core": "^2026.3.1"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

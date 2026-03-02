@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '[reqall] Search reqall for context relevant to this prompt using reqall:search. Use the current git remote or directory name as the project_name parameter.'",
+            "command": "echo '[reqall] Invoke the reqall:context skill: (1) upsert the project using the git remote or directory name, (2) search reqall for context relevant to this prompt, (3) list open records for this project. Skip impact unless the prompt involves changing existing tracked work.'",
             "timeout": 10
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '[reqall] Invoke the reqall:classify skill to classify and persist the work done in this session.'",
+            "command": "echo '[reqall] Invoke the reqall:persist skill to classify and persist ALL work done in this session. Create a record for each distinct work item and link related records.'",
             "timeout": 10
           }
         ]
