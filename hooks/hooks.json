@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '[reqall] Invoke the reqall:context skill: (1) upsert the project using the git remote or directory name, (2) search reqall for context relevant to this prompt, (3) list open records for this project. Skip impact unless the prompt involves changing existing tracked work.'",
+            "command": "N=${REQALL_PROJECT_NAME:-$(git remote get-url origin 2>/dev/null | sed -E 's/.*[:/]([^/]+\\/[^/.]+?)(\\.git)?$/\\1/')}; [ -z \"$N\" ] && N=$(basename \"$(pwd)\"); echo \"[reqall] Invoke the reqall:context skill with project_name=$N: (1) upsert the project using EXACTLY name=\\\"$N\\\", (2) search reqall for context relevant to this prompt, (3) list open records for this project. Skip impact unless the prompt involves changing existing tracked work.\"",
             "timeout": 10
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '[reqall] Invoke the reqall:persist skill to classify and persist ALL work done in this session. Create a record for each distinct work item and link related records.'",
+            "command": "N=${REQALL_PROJECT_NAME:-$(git remote get-url origin 2>/dev/null | sed -E 's/.*[:/]([^/]+\\/[^/.]+?)(\\.git)?$/\\1/')}; [ -z \"$N\" ] && N=$(basename \"$(pwd)\"); echo \"[reqall] Invoke the reqall:persist skill to classify and persist ALL work done in this session. Use project_name=\\\"$N\\\" when calling reqall:upsert_project. Create a record for each distinct work item and link related records.\"",
             "timeout": 10
           }
         ]
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '[reqall] A planning subagent completed. Save this plan as a spec record. Call reqall:upsert_project with the project name (from git remote or directory), then reqall:upsert_record with kind=spec, status=open, the plan title, and full plan as body.'",
+            "command": "N=${REQALL_PROJECT_NAME:-$(git remote get-url origin 2>/dev/null | sed -E 's/.*[:/]([^/]+\\/[^/.]+?)(\\.git)?$/\\1/')}; [ -z \"$N\" ] && N=$(basename \"$(pwd)\"); echo \"[reqall] A planning subagent completed. Save this plan as a spec record. Call reqall:upsert_project with name=\\\"$N\\\", then reqall:upsert_record with kind=spec, status=open, the plan title, and full plan as body.\"",
             "timeout": 10
           }
         ]

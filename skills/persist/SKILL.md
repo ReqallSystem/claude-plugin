@@ -30,9 +30,12 @@ Prefix titles to aid scanning:
 
 ## Steps
 
-1. **Identify the project** — Determine the project name from the git
-   remote or directory. Call `reqall:upsert_project` to get the
-   `project_id`.
+1. **Identify the project** — Use the project name provided by the hook
+   output (look for `project_name=...` in the hook message). If no hook
+   output is available, check the `REQALL_PROJECT_NAME` env var, then run
+   `git remote get-url origin` to extract the `org/repo` name, falling
+   back to the directory basename only if the git command fails. Call
+   `reqall:upsert_project` with that exact name to get the `project_id`.
 
 2. **Analyze the session** — Review the conversation to identify all
    distinct work items. A session may produce multiple records, e.g. a

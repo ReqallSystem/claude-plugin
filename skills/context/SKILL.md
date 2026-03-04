@@ -9,9 +9,11 @@ Load project context from Reqall before starting work.
 
 ## Steps
 
-1. **Identify the project** — Determine the project name from the git
-   remote (`org/repo` format) or fall back to the current directory name.
-   If `REQALL_PROJECT_NAME` is set, use that instead.
+1. **Identify the project** — Use the project name provided by the hook
+   output (look for `project_name=...` in the hook message). If no hook
+   output is available, check the `REQALL_PROJECT_NAME` env var, then run
+   `git remote get-url origin` to extract the `org/repo` name, falling
+   back to the directory basename only if the git command fails.
 
 2. **Ensure the project exists** — Call `reqall:upsert_project` with the
    project name. Note the returned `project_id`.
