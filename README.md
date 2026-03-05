@@ -31,8 +31,9 @@ export REQALL_URL="https://reqall.net"
 | Event | Hook | Description |
 |-------|------|-------------|
 | `UserPromptSubmit` | context | Initializes the project, searches for relevant context, and lists open records |
-| `Stop` | persist | Classifies all completed work items and persists them as records with links |
+| `Stop` | persist | Mandatory persist step — classifies all completed work items and persists them as records with links, then verifies nothing was missed |
 | `SubagentStop` (Plan) | plan | Saves planning output as a specification record |
+| `SubagentStop` (general) | note | Reminds the agent to note significant subagent outputs for persistence at session end |
 
 ### Skills
 

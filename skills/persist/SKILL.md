@@ -38,9 +38,18 @@ Prefix titles to aid scanning:
    `reqall:upsert_project` with that exact name to get the `project_id`.
 
 2. **Analyze the session** — Review the conversation to identify all
-   distinct work items. A session may produce multiple records, e.g. a
-   bug fix (issue/resolved), a new spec (spec/open), and a follow-up
-   task (todo/open).
+   distinct work items. Scan each category explicitly:
+   - Files created or modified
+   - Bugs fixed or discovered
+   - Architectural or design decisions made
+   - Specs written, changed, or discussed
+   - Tests added or updated
+   - Tasks identified for future work
+   - Plans produced by subagents
+
+   A session may produce multiple records, e.g. a bug fix
+   (issue/resolved), a new spec (spec/open), and a follow-up task
+   (todo/open).
 
 3. **Create records** — For each non-trivial work item, call
    `reqall:upsert_record` with:
@@ -61,6 +70,11 @@ Prefix titles to aid scanning:
 
 5. **Summarize** — Tell the user what was persisted: records
    created/updated, links established.
+
+6. **Verify** — Call `reqall:list_records` with the `project_id` to
+   review the records just created or updated. Cross-check against the
+   work items identified in step 2. If anything was missed, create it
+   now.
 
 ## When to Skip
 
