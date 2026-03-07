@@ -47,7 +47,7 @@ Load project context from Reqall before starting work.
 
 ## Automatic Per-File Search
 
-The PreToolUse hook automatically calls `reqall:search` with the file path
-before each Write, Edit, or NotebookEdit. This supplements the broad search
-done here by surfacing file-specific records (specs, issues, decisions) at
-the moment of modification.
+The PreToolUse hook instructs Claude to call `reqall:search` with the file
+path before each Write, Edit, or NotebookEdit. This supplements the broad
+search done here by surfacing file-specific records (specs, issues,
+decisions) at the moment of modification.
