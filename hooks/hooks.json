@@ -1,5 +1,17 @@
 {
   "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|Bash|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "N=${REQALL_PROJECT_NAME:-$(git remote get-url origin 2>/dev/null | sed -E 's/.*[:/]([^/]+\\/[^/.]+?)(\\.git)?$/\\1/')}; [ -z \"$N\" ] && N=$(basename \"$(pwd)\"); echo \"[reqall] Launch a background sub-agent (run_in_background=true) to document the work just performed. The sub-agent should follow the reqall:document skill: (1) call reqall:upsert_project with name=\\\"$N\\\" to get the project_id, (2) evaluate whether the tool use was non-trivial and worth documenting, (3) if so, call reqall:search to find related existing records, (4) call reqall:upsert_record with the appropriate kind/status/title/body, (5) call reqall:upsert_link for any related records found. If the tool use was trivial (read-only, no-op, formatting-only), the sub-agent should skip and output nothing. Pass the sub-agent a concise summary of what the tool just did.\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "hooks": [
