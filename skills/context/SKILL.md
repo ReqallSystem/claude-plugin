@@ -44,3 +44,10 @@ Load project context from Reqall before starting work.
 - Simple question or chat (no coding task): only run step 3 (search).
 - Search returns nothing: say so and proceed — the project may be new.
 - No open records: skip step 4 output.
+
+## Automatic Per-File Search
+
+The PreToolUse hook automatically calls `reqall:search` with the file path
+before each Write, Edit, or NotebookEdit. This supplements the broad search
+done here by surfacing file-specific records (specs, issues, decisions) at
+the moment of modification.

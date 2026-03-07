@@ -1,5 +1,17 @@
 {
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "N=${REQALL_PROJECT_NAME:-$(git remote get-url origin 2>/dev/null | sed -E 's/.*[:/]([^/]+\\/[^/.]+?)(\\.git)?$/\\1/')}; [ -z \"$N\" ] && N=$(basename \"$(pwd)\"); FP=$(echo \"$TOOL_INPUT\" | grep -oP '\"file_path\"\\s*:\\s*\"\\K[^\"]+' | head -1); [ -z \"$FP\" ] && FP=$(echo \"$TOOL_INPUT\" | grep -oP '\"notebook_path\"\\s*:\\s*\"\\K[^\"]+' | head -1); [ -n \"$FP\" ] && echo \"[reqall] Before modifying $FP, call reqall:search with query=\\\"$FP\\\" and project_name=\\\"$N\\\" to check for relevant records (specs, open issues, architecture decisions). If results are found, consider them before proceeding.\" || echo \"\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit|Bash|NotebookEdit",
