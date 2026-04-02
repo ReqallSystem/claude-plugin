@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh issue:*)",
+      "Bash(npm ls:*)",
+      "Bash(wc:*)",
+      "Bash(head:*)",
+      "Bash(find:*)"
+    ]
+  }
+}

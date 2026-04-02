@@ -1,7 +1,7 @@
 # Reqall Claude Plugin
 
 Persistent semantic memory for Claude Code agents.
-Automatically gleans context before prompts, classifies completed work, and saves plans an& specifications.
+Automatically gleans context before prompts, classifies completed work, and saves plans and specifications.
 
 ## Installation
 
@@ -39,6 +39,7 @@ export REQALL_URL="https://reqall.net"
 
 - `/reqall:context` — Initialize project and gather relevant context before starting work
 - `/reqall:persist` — Classify and persist all work completed in a session
+- `/reqall:triage` — Classify incoming issues, gather structured details, and create prioritized records
 - `/reqall:review` — Interactive review and triage of open records
 
 ### MCP Server
