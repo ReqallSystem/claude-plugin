@@ -49,7 +49,7 @@ and Windows.
 - `/reqall:document` — Document a single work item (used by the background documenter agent)
 - `/reqall:triage` — Classify incoming issues, gather structured details, and create prioritized records (user-invoked)
 - `/reqall:review` — Interactive review and triage of open records (user-invoked)
-- `/reqall:sleep` — Knowledge-graph maintenance: consolidate, compact, split, cross-link (user-invoked)
+- `/reqall:sleep` — Compress memory: consolidate, split, compact, skip, crosslink (user-invoked)
 
 Skills pre-approve the Reqall MCP tools via `allowed-tools`, so they run
 without permission prompts.
