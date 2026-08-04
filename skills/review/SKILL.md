@@ -1,6 +1,13 @@
 ---
-name: reqall:review
+name: review
 description: Interactive review and triage of open records for the current project
+disable-model-invocation: true
+allowed-tools:
+  - mcp__plugin_reqall_reqall__upsert_project
+  - mcp__plugin_reqall_reqall__list_records
+  - mcp__plugin_reqall_reqall__get_record
+  - mcp__plugin_reqall_reqall__upsert_record
+  - mcp__plugin_reqall_reqall__upsert_link
 ---
 
 # Review Open Records

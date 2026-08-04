@@ -1,6 +1,13 @@
 ---
-name: reqall:context
+name: context
 description: Initialize project and gather relevant context from the Reqall knowledgebase
+when_to_use: At session start or before beginning a task, to load project memory — triggered automatically by the SessionStart hook
+allowed-tools:
+  - mcp__plugin_reqall_reqall__upsert_project
+  - mcp__plugin_reqall_reqall__search
+  - mcp__plugin_reqall_reqall__list_records
+  - mcp__plugin_reqall_reqall__get_record
+  - mcp__plugin_reqall_reqall__impact
 ---
 
 # Gather Context

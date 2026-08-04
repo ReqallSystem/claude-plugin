@@ -1,6 +1,12 @@
 ---
-name: reqall:sleep
+name: sleep
 description: Run SLEEP maintenance on a project — consolidate, compact, split, and cross-link records to keep the knowledge graph healthy
+disable-model-invocation: true
+argument-hint: "[org/repo]"
+allowed-tools:
+  - mcp__plugin_reqall_reqall__upsert_project
+  - mcp__plugin_reqall_reqall__sleep_candidates
+  - mcp__plugin_reqall_reqall__sleep_apply
 ---
 
 # SLEEP — Knowledge Graph Maintenance

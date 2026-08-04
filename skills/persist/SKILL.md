@@ -1,6 +1,13 @@
 ---
-name: reqall:persist
+name: persist
 description: Classify and persist all work completed in this session to Reqall
+when_to_use: At the end of a work session or before context compaction — triggered automatically by the Stop and PreCompact hooks
+allowed-tools:
+  - mcp__plugin_reqall_reqall__upsert_project
+  - mcp__plugin_reqall_reqall__search
+  - mcp__plugin_reqall_reqall__list_records
+  - mcp__plugin_reqall_reqall__upsert_record
+  - mcp__plugin_reqall_reqall__upsert_link
 ---
 
 # Persist Work

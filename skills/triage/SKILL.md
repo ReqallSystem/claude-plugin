@@ -1,6 +1,14 @@
 ---
-name: reqall:triage
+name: triage
 description: Classify incoming issues, gather structured details, and create prioritized Reqall records
+disable-model-invocation: true
+argument-hint: "[issue description]"
+allowed-tools:
+  - mcp__plugin_reqall_reqall__upsert_project
+  - mcp__plugin_reqall_reqall__search
+  - mcp__plugin_reqall_reqall__list_records
+  - mcp__plugin_reqall_reqall__upsert_record
+  - mcp__plugin_reqall_reqall__upsert_link
 ---
 
 # Triage Incoming Issue
