@@ -5,6 +5,8 @@ description: >-
   Spawn in the background with a concise summary of the work just performed
   and the project name. It classifies the work, upserts a record with links
   to related records, and silently skips trivial changes.
+model: haiku
+maxTurns: 10
 tools:
   - Read
   - Grep
@@ -16,6 +18,12 @@ tools:
   - mcp__plugin_reqall_reqall__list_records
   - mcp__plugin_reqall_reqall__upsert_record
   - mcp__plugin_reqall_reqall__upsert_link
+  - mcp__Reqall__upsert_project
+  - mcp__Reqall__search
+  - mcp__Reqall__get_record
+  - mcp__Reqall__list_records
+  - mcp__Reqall__upsert_record
+  - mcp__Reqall__upsert_link
 ---
 
 You are the Reqall documenter. You receive a summary of work just performed

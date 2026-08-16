@@ -11,6 +11,19 @@ skill frontmatter spellings (`when_to_use`, `argument-hint`,
 test suite (13/13 passing, `dist/` in sync with `src/`) are all correct and
 current. The items below are the remaining gaps, ordered by priority.
 
+> **Implementation status (2026-08-16, v2026.8.4):** items 1–6 and 9–12 are
+> implemented on this branch. Two findings were amended after verifying
+> against the hooks reference: PostCompact output is ignored by Claude Code —
+> post-compaction re-injection is instead covered by `SessionStart` re-firing
+> with `source: compact`, which the existing matcher-less hook already
+> handles (item 6); and SubagentStop JSON output cannot inject context into
+> the parent conversation, so that hook was rewritten as a side-effect-only
+> activity marker instead of being filtered/throttled (item 5). Item 4's
+> activity gate became a two-tier cadence (standard interval with activity,
+> longer idle interval without) after a review note correctly observed that
+> chat-only sessions can still produce persistable decisions. Items 7, 8,
+> and 13 remain open follow-ups.
+
 ---
 
 ## P1 — Broken or silently inert
@@ -48,31 +61,48 @@ at enable time, `sensitive: true` masks secrets, values substitute as
 `${user_config.KEY}` in MCP configs and export as `CLAUDE_PLUGIN_OPTION_<KEY>`
 env vars to hook processes. `REQALL_API_KEY` / `REQALL_URL` are exactly this
 use case — today the README tells users to `export` them by hand, which is
-the pre-2026 pattern and a real onboarding hurdle. (Verify exact substitution
-syntax against the plugins-reference docs when implementing; keep the env
-vars as a fallback for CI.)
+the pre-2026 pattern and a real onboarding hurdle.
+
+*Implemented:* `userConfig` with a sensitive, required `api_key` and a
+`server_url` defaulting to `https://www.reqall.net`, substituted as
+`${user_config.*}` in `.mcp.json`. The originally suggested env-var fallback
+was dropped: the docs confirm substitution cannot nest with
+`${VAR:-default}` syntax, so plugin config is now the single source for the
+MCP connection (headless/CI environments seed it via `pluginConfigs` in
+`settings.json`).
 
 ### 4. Stop hook blocks sessions that did no work
 `src/hooks/stop.ts` blocks on every un-throttled Stop, even when the session
 was pure Q&A / read-only — the model then has to answer "Nothing to persist."
-(observed live during this evaluation). `post-tool.ts` already fires on
-Write|Edit|NotebookEdit|Bash and `common.ts` already has marker-file
-infrastructure: have post-tool touch an `activity-<session>` marker and have
-stop.ts block only when that marker is newer than the last persist. Removes
-the most annoying UX papercut without weakening persistence.
+(observed live during this evaluation).
 
-### 5. SubagentStop fires for every subagent, unthrottled — including the documenter itself
-`subagent-stop.ts` emits context for all non-Plan agents. That includes
-`reqall-documenter` (which was itself spawned by the PostToolUse nudge —
-bookkeeping about bookkeeping) and read-only Explore agents. In multi-agent
-sessions this repeats the same instruction many times per turn. Skip known
-bookkeeping/read-only agent types and reuse `throttle()` here.
+*Implemented as a two-tier cadence rather than a binary gate:* `post-tool.ts`
+and `subagent-stop.ts` touch an `activity-<session>` marker; sessions with
+the marker block on `REQALL_PERSIST_INTERVAL_MIN` (30) and the marker clears
+once a persist is forced, while sessions without it still block on the longer
+`REQALL_IDLE_PERSIST_INTERVAL_MIN` (120, `0` disables). A binary gate would
+have silently skipped chat-only sessions that produce decisions, specs, or
+plans without tool use (credit: PR #6 review); the idle tier keeps those
+captured at a gentler cadence.
 
-### 6. No PostCompact hook — injected context dies at compaction
-`PostCompact` now exists as an event. After compaction the SessionStart
-instructions may be summarized away, and PreCompact only persists *outward*.
-A PostCompact hook re-emitting the project-context instruction (same body as
-session-start.js) restores Reqall awareness for the rest of a long session.
+### 5. SubagentStop output is inert — rewritten as an activity marker
+Original finding: the hook fires unthrottled for every subagent, including
+`reqall-documenter` itself. Verifying against the hooks reference surfaced a
+stronger problem: SubagentStop JSON output supports only block decisions —
+`additionalContext` from this event is ignored, so the previous
+instruction-emitting hook did nothing at all. *Implemented:* the hook is now
+side-effect-only — it records session activity (so plans and findings from
+subagents get the standard persist cadence) and prints nothing; the
+`async: true` flag keeps it off the critical path. Plan-output persistence
+is handled by the persist skill's session scan, as before.
+
+### 6. Context re-injection after compaction — already covered, corrected
+Original recommendation was a PostCompact hook. Verifying against the hooks
+reference: PostCompact's hook output is ignored (it cannot inject context),
+but `SessionStart` re-fires after compaction with `source: compact` — and
+this plugin's SessionStart hook has no matcher, so it already re-injects
+project context post-compaction. No code change needed; documented in the
+README instead.
 
 ### 7. Consider UserPromptSubmit for per-task context
 `UserPromptSubmit` can inject `additionalContext` per user prompt. A

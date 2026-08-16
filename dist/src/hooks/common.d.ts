@@ -21,5 +21,11 @@ export declare function emitContext(eventName: string, context: string): void;
  * intervalMin <= 0 disables throttling.
  */
 export declare function throttle(key: string, intervalMin: number): boolean;
+/** Record that the session performed persistable work. */
+export declare function touchMarker(key: string): void;
+/** Timestamp of a marker, or 0 when absent/unreadable. */
+export declare function readMarker(key: string): number;
+/** Remove a marker once its work has been handled. */
+export declare function clearMarker(key: string): void;
 export declare function intervalEnv(name: string, defaultMin: number): number;
 //# sourceMappingURL=common.d.ts.map

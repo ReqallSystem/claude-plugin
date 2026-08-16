@@ -2,12 +2,18 @@
 name: review
 description: Interactive review and triage of open records for the current project
 disable-model-invocation: true
+argument-hint: "[kind]"
 allowed-tools:
   - mcp__plugin_reqall_reqall__upsert_project
   - mcp__plugin_reqall_reqall__list_records
   - mcp__plugin_reqall_reqall__get_record
   - mcp__plugin_reqall_reqall__upsert_record
   - mcp__plugin_reqall_reqall__upsert_link
+  - mcp__Reqall__upsert_project
+  - mcp__Reqall__list_records
+  - mcp__Reqall__get_record
+  - mcp__Reqall__upsert_record
+  - mcp__Reqall__upsert_link
 ---
 
 # Review Open Records

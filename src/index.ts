@@ -30,7 +30,7 @@ if (arg === '--help' || arg === '-h') {
 
 if (arg === '--json') {
   const manifest = JSON.parse(
-    readFileSync(resolve(pluginRoot, 'plugin.json'), 'utf-8'),
+    readFileSync(resolve(pluginRoot, '.claude-plugin', 'plugin.json'), 'utf-8'),
   );
   console.log(JSON.stringify({ ...manifest, dir: pluginRoot }, null, 2));
   process.exit(0);
