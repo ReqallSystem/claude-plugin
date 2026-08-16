@@ -90,23 +90,49 @@ test('post-tool interval of 0 disables throttling', () => {
   assert.notEqual(runHook('post-tool', input, env), null);
 });
 
-test('stop blocks with persist instructions when work not yet persisted', () => {
+test('stop blocks active sessions and clears the activity marker', () => {
+  const data = dataDir();
+  const env = {
+    CLAUDE_PLUGIN_DATA: data,
+    REQALL_DOC_INTERVAL_MIN: '0',
+    REQALL_PERSIST_INTERVAL_MIN: '0',
+    REQALL_IDLE_PERSIST_INTERVAL_MIN: '0',
+  };
+  runHook('post-tool', { session_id: 's2', tool_name: 'Write', tool_input: { file_path: '/a.ts' } }, env);
+  const out = runHook('stop', { session_id: 's2', stop_hook_active: false }, env);
+  assert.equal(out.decision, 'block');
+  assert.match(out.reason, /reqall:persist/);
+  assert.match(out.reason, /TestProj/);
+  const again = runHook('stop', { session_id: 's2', stop_hook_active: false }, env);
+  assert.equal(again, null, 'marker cleared after block; idle blocks disabled');
+});
+
+test('stop blocks idle sessions at the idle interval', () => {
   const data = dataDir();
   const out = runHook(
     'stop',
-    { hook_event_name: 'Stop', session_id: 's2', stop_hook_active: false },
+    { hook_event_name: 'Stop', session_id: 's3', stop_hook_active: false },
     { CLAUDE_PLUGIN_DATA: data },
   );
   assert.equal(out.decision, 'block');
   assert.match(out.reason, /reqall:persist/);
-  assert.match(out.reason, /TestProj/);
+});
+
+test('stop is silent for idle sessions when idle interval is 0', () => {
+  const data = dataDir();
+  const out = runHook(
+    'stop',
+    { session_id: 's4', stop_hook_active: false },
+    { CLAUDE_PLUGIN_DATA: data, REQALL_IDLE_PERSIST_INTERVAL_MIN: '0' },
+  );
+  assert.equal(out, null);
 });
 
 test('stop is silent when stop_hook_active is true', () => {
   const data = dataDir();
   const out = runHook(
     'stop',
-    { session_id: 's3', stop_hook_active: true },
+    { session_id: 's5', stop_hook_active: true },
     { CLAUDE_PLUGIN_DATA: data },
   );
   assert.equal(out, null);
@@ -115,25 +141,26 @@ test('stop is silent when stop_hook_active is true', () => {
 test('stop throttles repeat blocks within persist interval for same session', () => {
   const data = dataDir();
   const env = { CLAUDE_PLUGIN_DATA: data, REQALL_PERSIST_INTERVAL_MIN: '30' };
-  const input = { session_id: 's4', stop_hook_active: false };
+  const input = { session_id: 's6', stop_hook_active: false };
   assert.equal(runHook('stop', input, env).decision, 'block');
   assert.equal(runHook('stop', input, env), null, 'second block within interval should be suppressed');
 });
 
-test('subagent-stop saves Plan output as spec', () => {
-  const out = runHook('subagent-stop', { agent_type: 'Plan', session_id: 's5' });
-  assert.equal(out.hookSpecificOutput.hookEventName, 'SubagentStop');
-  assert.match(out.hookSpecificOutput.additionalContext, /spec/);
-  assert.match(out.hookSpecificOutput.additionalContext, /TestProj/);
-});
-
-test('subagent-stop notes other agents for later persistence', () => {
-  const out = runHook('subagent-stop', { agent_type: 'general-purpose', session_id: 's6' });
-  assert.match(out.hookSpecificOutput.additionalContext, /persist/i);
+test('subagent-stop is silent but records activity for the stop hook', () => {
+  const data = dataDir();
+  const env = {
+    CLAUDE_PLUGIN_DATA: data,
+    REQALL_PERSIST_INTERVAL_MIN: '0',
+    REQALL_IDLE_PERSIST_INTERVAL_MIN: '0',
+  };
+  const out = runHook('subagent-stop', { agent_type: 'Plan', session_id: 's7' }, env);
+  assert.equal(out, null, 'SubagentStop output is ignored by Claude Code, so emit nothing');
+  const stop = runHook('stop', { session_id: 's7', stop_hook_active: false }, env);
+  assert.equal(stop.decision, 'block', 'subagent activity should enable the active persist path');
 });
 
 test('pre-compact instructs persist before compaction', () => {
-  const out = runHook('pre-compact', { hook_event_name: 'PreCompact', session_id: 's7' });
+  const out = runHook('pre-compact', { hook_event_name: 'PreCompact', session_id: 's8' });
   assert.equal(out.hookSpecificOutput.hookEventName, 'PreCompact');
   assert.match(out.hookSpecificOutput.additionalContext, /persist/i);
 });
@@ -152,4 +179,16 @@ test('project name falls back to git remote when env unset', () => {
   assert.equal(result.status, 0);
   const out = JSON.parse(result.stdout.trim());
   assert.match(out.hookSpecificOutput.additionalContext, /ReqallSystem\/claude-plugin/);
+});
+
+test('index --json resolves the manifest from .claude-plugin', () => {
+  const result = spawnSync(
+    process.execPath,
+    [join(root, 'dist', 'src', 'index.js'), '--json'],
+    { encoding: 'utf-8' },
+  );
+  assert.equal(result.status, 0, `index --json exited ${result.status}: ${result.stderr}`);
+  const manifest = JSON.parse(result.stdout);
+  assert.equal(manifest.name, 'reqall');
+  assert.equal(manifest.dir, root);
 });

@@ -1,10 +1,14 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "reqall",
-  "version": "2026.8.3",
+  "displayName": "Reqall",
+  "version": "2026.8.4",
   "description": "Persistent semantic knowledgebase for AI agents",
   "author": {
     "name": "ReqallSystem"
   },
+  "homepage": "https://www.reqall.net",
+  "repository": "https://github.com/ReqallSystem/claude-plugin",
   "license": "MIT",
   "keywords": [
     "rag",
@@ -13,5 +17,20 @@
     "issues",
     "specifications"
   ],
-  "mcpServers": "./mcp-servers.json"
+  "mcpServers": "./.mcp.json",
+  "userConfig": {
+    "api_key": {
+      "type": "string",
+      "title": "Reqall API key",
+      "description": "API key from your Reqall account settings at reqall.net. Stored in secure storage.",
+      "sensitive": true,
+      "required": true
+    },
+    "server_url": {
+      "type": "string",
+      "title": "Reqall server URL",
+      "description": "Base URL of the Reqall server. Leave the default unless you self-host.",
+      "default": "https://www.reqall.net"
+    }
+  }
 }

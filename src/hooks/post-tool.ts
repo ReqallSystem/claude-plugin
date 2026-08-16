@@ -1,14 +1,21 @@
 #!/usr/bin/env node
 /**
- * PostToolUse (Write|Edit|NotebookEdit|Bash): prompt incremental documentation.
- * Throttled via REQALL_DOC_INTERVAL_MIN (default 10) so busy sessions are not spammed.
+ * PostToolUse (Write|Edit|NotebookEdit|Bash): record session activity and
+ * prompt incremental documentation.
+ * Documentation nudges are throttled via REQALL_DOC_INTERVAL_MIN (default 10)
+ * so busy sessions are not spammed.
  */
-import { emitContext, intervalEnv, projectName, readStdin, throttle } from './common.js';
+import { emitContext, intervalEnv, projectName, readStdin, throttle, touchMarker } from './common.js';
 
 const input = readStdin();
+const sessionId = input.session_id ?? 'global';
+
+// The Stop hook uses this marker to pick a persist cadence for the session.
+touchMarker(`activity-${sessionId}`);
+
 const interval = intervalEnv('REQALL_DOC_INTERVAL_MIN', 10);
 
-if (throttle(`doc-${input.session_id ?? 'global'}`, interval)) {
+if (throttle(`doc-${sessionId}`, interval)) {
   const name = projectName(input);
   emitContext(
     'PostToolUse',

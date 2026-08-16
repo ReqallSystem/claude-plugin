@@ -8,6 +8,11 @@ allowed-tools:
   - mcp__plugin_reqall_reqall__list_records
   - mcp__plugin_reqall_reqall__get_record
   - mcp__plugin_reqall_reqall__impact
+  - mcp__Reqall__upsert_project
+  - mcp__Reqall__search
+  - mcp__Reqall__list_records
+  - mcp__Reqall__get_record
+  - mcp__Reqall__impact
 ---
 
 # Gather Context

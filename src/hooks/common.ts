@@ -7,7 +7,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import { basename } from 'node:path';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export interface HookInput {
@@ -63,6 +63,17 @@ export function emitContext(eventName: string, context: string): void {
   );
 }
 
+function stateDir(): string {
+  return (
+    process.env.CLAUDE_PLUGIN_DATA ||
+    join(process.env.TMPDIR || process.env.TEMP || '/tmp', 'reqall-plugin')
+  );
+}
+
+function stateFile(prefix: string, key: string): string {
+  return join(stateDir(), `${prefix}-${key.replace(/[^a-zA-Z0-9_-]/g, '_')}`);
+}
+
 /**
  * Rate limiter backed by CLAUDE_PLUGIN_DATA (falls back to tmpdir).
  * Returns true when the action is allowed and records the attempt.
@@ -70,12 +81,9 @@ export function emitContext(eventName: string, context: string): void {
  */
 export function throttle(key: string, intervalMin: number): boolean {
   if (intervalMin <= 0) return true;
-  const dir =
-    process.env.CLAUDE_PLUGIN_DATA ||
-    join(process.env.TMPDIR || process.env.TEMP || '/tmp', 'reqall-plugin');
   try {
-    mkdirSync(dir, { recursive: true });
-    const file = join(dir, `throttle-${key.replace(/[^a-zA-Z0-9_-]/g, '_')}`);
+    mkdirSync(stateDir(), { recursive: true });
+    const file = stateFile('throttle', key);
     const now = Date.now();
     if (existsSync(file)) {
       const last = Number(readFileSync(file, 'utf-8'));
@@ -85,6 +93,35 @@ export function throttle(key: string, intervalMin: number): boolean {
     return true;
   } catch {
     return true; // never let bookkeeping failures suppress the hook
+  }
+}
+
+/** Record that the session performed persistable work. */
+export function touchMarker(key: string): void {
+  try {
+    mkdirSync(stateDir(), { recursive: true });
+    writeFileSync(stateFile('marker', key), String(Date.now()));
+  } catch {
+    // best-effort bookkeeping
+  }
+}
+
+/** Timestamp of a marker, or 0 when absent/unreadable. */
+export function readMarker(key: string): number {
+  try {
+    const n = Number(readFileSync(stateFile('marker', key), 'utf-8'));
+    return Number.isFinite(n) ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** Remove a marker once its work has been handled. */
+export function clearMarker(key: string): void {
+  try {
+    rmSync(stateFile('marker', key), { force: true });
+  } catch {
+    // best-effort bookkeeping
   }
 }
 

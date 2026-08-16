@@ -7,6 +7,9 @@ allowed-tools:
   - mcp__plugin_reqall_reqall__upsert_project
   - mcp__plugin_reqall_reqall__sleep_candidates
   - mcp__plugin_reqall_reqall__sleep_apply
+  - mcp__Reqall__upsert_project
+  - mcp__Reqall__sleep_candidates
+  - mcp__Reqall__sleep_apply
 ---
 
 # SLEEP — compress project memory

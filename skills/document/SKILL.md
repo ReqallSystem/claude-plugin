@@ -2,11 +2,16 @@
 name: document
 description: Document a single work item by upserting a record and any related links to Reqall
 when_to_use: Used by the reqall-documenter background agent to incrementally persist work after tool use; lighter-weight than persist
+user-invocable: false
 allowed-tools:
   - mcp__plugin_reqall_reqall__upsert_project
   - mcp__plugin_reqall_reqall__search
   - mcp__plugin_reqall_reqall__upsert_record
   - mcp__plugin_reqall_reqall__upsert_link
+  - mcp__Reqall__upsert_project
+  - mcp__Reqall__search
+  - mcp__Reqall__upsert_record
+  - mcp__Reqall__upsert_link
 ---
 
 # Document Work Item
