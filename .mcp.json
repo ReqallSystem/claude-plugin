@@ -2,7 +2,8 @@
   "mcpServers": {
     "reqall": {
       "type": "http",
-      "url": "${user_config.server_url}/mcp"
+      "url": "${user_config.server_url}/mcp",
+      "headersHelper": "node \"${CLAUDE_PLUGIN_ROOT}/dist/src/auth-headers.js\""
     }
   }
 }

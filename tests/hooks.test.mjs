@@ -192,3 +192,24 @@ test('index --json resolves the manifest from .claude-plugin', () => {
   assert.equal(manifest.name, 'reqall');
   assert.equal(manifest.dir, root);
 });
+
+function runAuthHeaders(env) {
+  const result = spawnSync(process.execPath, [join(root, 'dist', 'src', 'auth-headers.js')], {
+    encoding: 'utf-8',
+    env: { ...process.env, REQALL_API_KEY: undefined, ...env },
+  });
+  assert.equal(result.status, 0, `auth-headers exited ${result.status}: ${result.stderr}`);
+  return JSON.parse(result.stdout);
+}
+
+test('auth-headers emits no Authorization when REQALL_API_KEY is unset, so OAuth can run', () => {
+  assert.deepEqual(runAuthHeaders({}), {});
+});
+
+test('auth-headers treats a blank REQALL_API_KEY as unset', () => {
+  assert.deepEqual(runAuthHeaders({ REQALL_API_KEY: '   ' }), {});
+});
+
+test('auth-headers emits a bearer token when REQALL_API_KEY is set', () => {
+  assert.deepEqual(runAuthHeaders({ REQALL_API_KEY: 'rq_test' }), { Authorization: 'Bearer rq_test' });
+});
