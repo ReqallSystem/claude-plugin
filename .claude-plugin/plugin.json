@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "reqall",
   "displayName": "Reqall",
-  "version": "2026.8.4",
+  "version": "2026.8.5",
   "description": "Persistent semantic knowledgebase for AI agents",
   "author": {
     "name": "ReqallSystem"
@@ -19,17 +19,10 @@
   ],
   "mcpServers": "./.mcp.json",
   "userConfig": {
-    "api_key": {
-      "type": "string",
-      "title": "Reqall API key",
-      "description": "API key from your Reqall account settings at reqall.net. Stored in secure storage.",
-      "sensitive": true,
-      "required": true
-    },
     "server_url": {
       "type": "string",
       "title": "Reqall server URL",
-      "description": "Base URL of the Reqall server. Leave the default unless you self-host.",
+      "description": "Base origin of the Reqall server, with no path -- e.g. https://www.reqall.net. Do NOT include the /mcp endpoint path; the plugin appends it. Leave the default unless you self-host.",
       "default": "https://www.reqall.net"
     }
   }
