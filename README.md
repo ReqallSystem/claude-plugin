@@ -12,17 +12,20 @@ Automatically gleans context at session start, surfaces file-specific records be
 
 ## Setup
 
-When you enable the plugin, Claude Code prompts for:
+No configuration is required. On first connection Claude Code signs you in
+through your browser using OAuth, so there is no key to copy and nothing to
+carry between machines.
 
-- **Reqall API key** (required) — from your Reqall account settings at
-  [reqall.net](https://www.reqall.net). Stored in secure storage
-  (masked, not written to `settings.json`).
-- **Reqall server URL** — defaults to `https://www.reqall.net`; change it
-  only if you self-host.
+One optional setting, available via `/plugin`:
 
-Reconfigure later via `/plugin`. Upgrading from a version that used the
-`REQALL_API_KEY` / `REQALL_URL` environment variables: the MCP connection now
-reads plugin config instead, so enter your key once when prompted.
+- **Reqall server URL** — the base origin only, e.g. `https://www.reqall.net`.
+  Do **not** include the `/mcp` path; the plugin appends it. Change this only
+  if you self-host.
+
+Upgrading from a version that required an API key: nothing to do. The key
+setting is gone and the browser flow replaces it. Because that key lived in OS
+secure storage, it never followed you to a new machine; OAuth removes that
+failure mode entirely.
 
 ## What It Does
 
@@ -63,9 +66,12 @@ namespace (`mcp__Reqall__*`) so pre-approval works on both surfaces.
 
 ### MCP Server
 
-Connects to the Reqall API at `${user_config.server_url}/mcp` with
-`Authorization: Bearer ${user_config.api_key}` — both values come from the
-plugin configuration prompted at enable time (`.mcp.json`).
+Connects to the Reqall API at `${user_config.server_url}/mcp` (`.mcp.json`).
+
+No `Authorization` header is set. The server answers an unauthenticated
+request with an RFC 9728 challenge, so Claude Code discovers the authorization
+server, registers dynamically, and runs the PKCE browser flow on its own.
+Tokens are then managed and refreshed by Claude Code.
 
 ## Environment Variables
 
