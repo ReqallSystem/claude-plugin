@@ -6,7 +6,7 @@
  * "no action". See https://code.claude.com/docs/en/hooks
  */
 import { execFileSync } from 'node:child_process';
-import { basename } from 'node:path';
+import { hostname as osHostname, userInfo } from 'node:os';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 export function readStdin() {
@@ -18,7 +18,26 @@ export function readStdin() {
         return {};
     }
 }
-/** REQALL_PROJECT_NAME > git remote org/repo > cwd basename. */
+/**
+ * The reserved machine project for this box and OS user:
+ * `.machine/<hostname>/<os-user>`. REQALL_MACHINE_NAME overrides the hostname
+ * segment — set it in CI/containers where hostnames are ephemeral, so runs
+ * don't mint a fresh project each time. The server auto-creates `.user` and
+ * links it parent→ this project on first upsert.
+ */
+export function machineProjectName() {
+    const clean = (seg) => seg.trim().replace(/[\\/\s]+/g, '-').replace(/^-+|-+$/g, '') || 'unknown';
+    const host = process.env.REQALL_MACHINE_NAME?.trim() || osHostname().split('.')[0];
+    let user = 'unknown';
+    try {
+        user = userInfo().username || 'unknown';
+    }
+    catch {
+        // userInfo can throw on exotic environments (no passwd entry)
+    }
+    return `.machine/${clean(host).toLowerCase()}/${clean(user)}`;
+}
+/** REQALL_PROJECT_NAME > git remote org/repo > machine project (never the cwd basename). */
 export function projectName(input) {
     const env = process.env.REQALL_PROJECT_NAME;
     if (env)
@@ -37,7 +56,10 @@ export function projectName(input) {
     catch {
         // not a git repo or git unavailable — fall through
     }
-    return basename(cwd);
+    // Sessions outside any repo are machine memory, not a project named after
+    // whatever directory we happen to be in (which minted junk like "dev",
+    // "Work", or UUID worktree names).
+    return machineProjectName();
 }
 /** Emit additionalContext for the given event and exit 0. */
 export function emitContext(eventName, context) {
