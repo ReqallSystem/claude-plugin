@@ -11,7 +11,15 @@ export interface HookInput {
     [key: string]: unknown;
 }
 export declare function readStdin(): HookInput;
-/** REQALL_PROJECT_NAME > git remote org/repo > cwd basename. */
+/**
+ * The reserved machine project for this box and OS user:
+ * `.machine/<hostname>/<os-user>`. REQALL_MACHINE_NAME overrides the hostname
+ * segment — set it in CI/containers where hostnames are ephemeral, so runs
+ * don't mint a fresh project each time. The server auto-creates `.user` and
+ * links it parent→ this project on first upsert.
+ */
+export declare function machineProjectName(): string;
+/** REQALL_PROJECT_NAME > git remote org/repo > machine project (never the cwd basename). */
 export declare function projectName(input: HookInput): string;
 /** Emit additionalContext for the given event and exit 0. */
 export declare function emitContext(eventName: string, context: string): void;

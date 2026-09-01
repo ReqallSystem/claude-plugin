@@ -45,9 +45,17 @@ Prefix titles to aid scanning:
 1. **Identify the project** — Use the project name provided by the hook
    output (look for `project_name=...` in the hook message). If no hook
    output is available, check the `REQALL_PROJECT_NAME` env var, then run
-   `git remote get-url origin` to extract the `org/repo` name, falling
-   back to the directory basename only if the git command fails. Call
+   `git remote get-url origin` to extract the `org/repo` name, or, if the git
+   command fails (not a repo), the machine project `.machine/<hostname>/<os-user>`
+   from the hook output — never the directory basename. Call
    `reqall:upsert_project` with that exact name to get the `project_id`.
+
+   **Routing:** account-wide preferences, conventions, and general knowledge go
+   to the `.user` project; machine-specific configuration, environment fixes,
+   and system wrangling go to the machine project
+   `.machine/<hostname>/<os-user>` (both named in the SessionStart hook
+   output). Repo-anchored work stays in the repo project — when in doubt,
+   prefer the repo project.
 
 2. **Analyze the session** — Review the conversation to identify all
    distinct work items. Scan each category explicitly:

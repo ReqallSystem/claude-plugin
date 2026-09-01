@@ -213,3 +213,38 @@ test('auth-headers treats a blank REQALL_API_KEY as unset', () => {
 test('auth-headers emits a bearer token when REQALL_API_KEY is set', () => {
   assert.deepEqual(runAuthHeaders({ REQALL_API_KEY: 'rq_test' }), { Authorization: 'Bearer rq_test' });
 });
+
+test('project name falls back to the machine project when not a git repo', () => {
+  const dir = dataDir();
+  const result = spawnSync(
+    process.execPath,
+    [join(root, 'dist', 'src', 'hooks', 'session-start.js')],
+    {
+      input: JSON.stringify({ cwd: dir }),
+      encoding: 'utf-8',
+      cwd: dir,
+      env: { ...process.env, REQALL_PROJECT_NAME: '', REQALL_MACHINE_NAME: '' },
+    },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  const out = JSON.parse(result.stdout.trim());
+  assert.match(out.hookSpecificOutput.additionalContext, /project_name=\.machine\/[^/]+\/[^/\s:]+/);
+  assert.match(out.hookSpecificOutput.additionalContext, /Reserved routing/);
+});
+
+test('REQALL_MACHINE_NAME overrides the hostname segment', () => {
+  const dir = dataDir();
+  const result = spawnSync(
+    process.execPath,
+    [join(root, 'dist', 'src', 'hooks', 'session-start.js')],
+    {
+      input: JSON.stringify({ cwd: dir }),
+      encoding: 'utf-8',
+      cwd: dir,
+      env: { ...process.env, REQALL_PROJECT_NAME: '', REQALL_MACHINE_NAME: 'CI-Box' },
+    },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  const out = JSON.parse(result.stdout.trim());
+  assert.match(out.hookSpecificOutput.additionalContext, /project_name=\.machine\/ci-box\//);
+});

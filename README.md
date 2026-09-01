@@ -104,7 +104,8 @@ Claude Code refuses to substitute plugin config into shell-executed helpers.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `REQALL_API_KEY` | unset | Bearer token for headless/CI use; when set, replaces the OAuth browser flow |
-| `REQALL_PROJECT_NAME` | auto-detected | Override project name (else git `origin` org/repo, else directory name) |
+| `REQALL_PROJECT_NAME` | auto-detected | Override project name (else git `origin` org/repo, else the machine project `.machine/<hostname>/<os-user>`) |
+| `REQALL_MACHINE_NAME` | short hostname | Overrides the hostname segment of the machine project — set in CI/containers with ephemeral hostnames |
 | `REQALL_DOC_INTERVAL_MIN` | `10` | Minimum minutes between PostToolUse documentation prompts (0 disables throttling) |
 | `REQALL_PERSIST_INTERVAL_MIN` | `30` | Minimum minutes between Stop persist blocks for sessions with tool/subagent activity (0 disables throttling) |
 | `REQALL_IDLE_PERSIST_INTERVAL_MIN` | `120` | Minimum minutes between Stop persist blocks for chat-only sessions (0 disables idle blocks entirely) |
