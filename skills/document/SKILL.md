@@ -53,7 +53,10 @@ Prefix titles to aid scanning:
 
 ## Steps
 
-1. **Identify the project** — Use the `project_name` provided in the
+1. **Identify the project** — Route by content: account-wide
+   preferences/conventions go to `.user`; machine-specific config/fixes go to
+   the `.machine/<hostname>/<os-user>` project named in the hook output; all
+   repo-anchored work uses the `project_name` provided in the
    sub-agent prompt. Call `reqall:upsert_project` with that name to get
    the `project_id`.
 
