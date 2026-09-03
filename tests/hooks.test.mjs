@@ -291,6 +291,89 @@ test('intent-track falls back to tool_input when the response carries no record'
   assert.match(pc.hookSpecificOutput.additionalContext, /#42 spec "SPEC: from input"/);
 });
 
+test('intent-track records get_record reads as consulted; consulted alone does not force a persist', () => {
+  const data = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_PERSIST_INTERVAL_MIN: '0', REQALL_IDLE_PERSIST_INTERVAL_MIN: '0' };
+  runHook(
+    'intent-track',
+    {
+      session_id: 'c1',
+      tool_name: 'mcp__plugin_reqall_reqall__get_record',
+      tool_input: { id: 4695 },
+      tool_response: [{ type: 'text', text: JSON.stringify({ ok: true, data: { record: { id: 4695, kind: 'spec', title: 'SPEC: Intent flow' } } }) }],
+    },
+    env,
+  );
+  const stop = runHook('stop', { session_id: 'c1', stop_hook_active: false }, env);
+  assert.equal(stop, null, 'reading a spec is not session activity');
+  const pc = runHook('pre-compact', { session_id: 'c1' }, env);
+  const ctx = pc.hookSpecificOutput.additionalContext;
+  assert.match(ctx, /consulted this session: #4695 spec "SPEC: Intent flow"/);
+  assert.doesNotMatch(ctx, /written this session/);
+});
+
+test('intent-track ignores get_record of non-intent kinds and never trusts tool_input.kind for reads', () => {
+  const data = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data };
+  runHook(
+    'intent-track',
+    {
+      session_id: 'c2',
+      tool_name: 'mcp__Reqall__get_record',
+      tool_input: { id: 7, kind: 'spec' },
+      tool_response: { ok: true, data: { record: { id: 7, kind: 'todo', title: 'TASK: x' } } },
+    },
+    env,
+  );
+  runHook('intent-track', { session_id: 'c2', tool_name: 'mcp__Reqall__get_record', tool_input: { id: 8 }, tool_response: 'ok' }, env);
+  const pc = runHook('pre-compact', { session_id: 'c2' }, env);
+  assert.doesNotMatch(pc.hookSpecificOutput.additionalContext, /Intent records|consulted/);
+});
+
+test('a write is sticky over a read for the same id, in either order', () => {
+  const data = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_PERSIST_INTERVAL_MIN: '0', REQALL_IDLE_PERSIST_INTERVAL_MIN: '0' };
+  const rec = { id: 4695, kind: 'spec', title: 'SPEC: Intent flow' };
+  const read = { session_id: 'w1', tool_name: 'mcp__plugin_reqall_reqall__get_record', tool_input: { id: 4695 }, tool_response: { data: { record: rec } } };
+  const write = { session_id: 'w1', tool_name: 'mcp__plugin_reqall_reqall__upsert_record', tool_input: { id: 4695, body: 'x' }, tool_response: { data: { action: 'updated', record: rec } } };
+  runHook('intent-track', write, env);
+  runHook('intent-track', read, env);
+  const pc = runHook('pre-compact', { session_id: 'w1' }, env);
+  const ctx = pc.hookSpecificOutput.additionalContext;
+  assert.match(ctx, /written this session: #4695/);
+  assert.doesNotMatch(ctx, /consulted this session/);
+  assert.equal(ctx.match(/#4695/g).length, 1);
+});
+
+test('pre-compact marks intents handed off; stop then asks to verify rather than reconcile again', () => {
+  const data = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_PERSIST_INTERVAL_MIN: '0', REQALL_IDLE_PERSIST_INTERVAL_MIN: '0' };
+  runHook(
+    'intent-track',
+    { session_id: 'h1', tool_name: 'mcp__plugin_reqall_reqall__upsert_record', tool_input: { kind: 'spec', title: 'SPEC: Intent flow' }, tool_response: [{ type: 'text', text: specResponse }] },
+    env,
+  );
+  const pc = runHook('pre-compact', { session_id: 'h1' }, env);
+  assert.match(pc.hookSpecificOutput.additionalContext, /written this session: #4695/);
+  const stop = runHook('stop', { session_id: 'h1', stop_hook_active: false }, env);
+  assert.equal(stop.decision, 'block', 'handed-off intent is still persistable work');
+  assert.match(stop.reason, /already handed to persist before compaction: #4695/);
+  assert.match(stop.reason, /do NOT create a second work record/);
+  assert.doesNotMatch(stop.reason, /Intent records written this session/);
+});
+
+test('a fresh write after hand-off clears the handed-off mark', () => {
+  const data = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_PERSIST_INTERVAL_MIN: '0', REQALL_IDLE_PERSIST_INTERVAL_MIN: '0' };
+  const write = { session_id: 'h2', tool_name: 'mcp__plugin_reqall_reqall__upsert_record', tool_input: { kind: 'spec', title: 'SPEC: Intent flow' }, tool_response: [{ type: 'text', text: specResponse }] };
+  runHook('intent-track', write, env);
+  runHook('pre-compact', { session_id: 'h2' }, env);
+  runHook('intent-track', write, env);
+  const stop = runHook('stop', { session_id: 'h2', stop_hook_active: false }, env);
+  assert.match(stop.reason, /Intent records written this session: #4695/);
+  assert.doesNotMatch(stop.reason, /already handed/);
+});
+
 test('pre-compact instructs persist before compaction', () => {
   const out = runHook('pre-compact', { hook_event_name: 'PreCompact', session_id: 's8' });
   assert.equal(out.hookSpecificOutput.hookEventName, 'PreCompact');

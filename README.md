@@ -61,10 +61,10 @@ and Windows.
 | `PreToolUse` (Write/Edit/NotebookEdit) | Surfaces file-specific records (specs, issues, decisions) before a file is modified |
 | `PostToolUse` (Write/Edit/NotebookEdit/Bash, async) | Marks the session as active and prompts background documentation of non-trivial work via the `reqall-documenter` agent; throttled |
 | `PostToolUse` (ExitPlanMode) | An accepted plan is agreed intent: instructs `reqall:intend` to find or upsert the spec/arch record for the plan and link it before work starts |
-| `PostToolUse` (reqall `upsert_record`, async) | Records the ids of spec/arch records written this session to plugin state so the persist step can reconcile the work against them. Side-effect only |
+| `PostToolUse` (reqall `upsert_record` / `get_record`, async) | Records spec/arch records touched this session to plugin state — written via `upsert_record`, consulted via `get_record` — so the persist step can reconcile the work against them even after compaction. Side-effect only |
 | `Stop` | Blocks turn completion (loop-safe) to force the persist step. Sessions with tool or subagent activity, or recorded intent, block on the standard interval; chat-only sessions block on the longer idle interval so decisions made in conversation are still captured. Lists the session's intent records so persist links fulfilled work `implements` its spec and files a blocking todo for any gap |
 | `SubagentStop` (async) | Marks the session as active so subagent output (plans, findings) is persisted on the standard cadence. Side-effect only: Claude Code ignores SubagentStop JSON output, so it prints nothing |
-| `PreCompact` | Persists unrecorded decisions and work before context compaction loses them; includes the session's intent records |
+| `PreCompact` | Persists unrecorded decisions and work before context compaction loses them; includes the session's intent records and marks them handed-off, so the later Stop asks persist to verify the reconciliation rather than repeat it |
 
 ### Intent-before-work
 
@@ -77,7 +77,9 @@ intent → do the work → persist and reconcile**.
    `spec` (new behavior) or `arch` (structural decision) record describing
    what is to be, and links it to related records. Chores, questions and
    single-file fixes never get one.
-3. The `upsert_record` PostToolUse hook remembers those spec/arch ids.
+3. The `upsert_record` / `get_record` PostToolUse hook remembers those
+   spec/arch ids — including an existing spec that `intend` selected
+   without editing.
 4. At Stop / PreCompact, `reqall:persist` writes a `work` record for the
    session and reconciles it: fulfilled intent → `work --implements-->
    spec` and the work is resolved; unfulfilled intent → a `todo` that

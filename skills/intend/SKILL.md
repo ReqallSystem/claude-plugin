@@ -54,9 +54,12 @@ spec inflation, which is worse than a missing record.
    if the title alone is ambiguous.
 
 3. **Prefer existing over new**
-   - An existing spec/arch already describes this intent → **update it**
-     via `reqall:upsert_record` (pass its `id`) only if the agreed scope adds
-     something; otherwise leave it and just note its id for step 5.
+   - An existing spec/arch already describes this intent → call
+     `reqall:get_record` on it (required, even if step 2 already showed
+     enough: the read registers the record with the intent tracker, so the
+     Stop/PreCompact hooks can still name it after compaction). Then
+     **update it** via `reqall:upsert_record` (pass its `id`) only if the
+     agreed scope adds something; otherwise leave it as is.
    - No match → **create one record**:
      - `kind: "spec"`, `status: "open"` for new or changed behavior.
        Title prefix by area: `SPEC:`, `API:`, `AUTH:`, `DATA:`, `UI:`.
@@ -79,8 +82,8 @@ spec inflation, which is worse than a missing record.
 5. **Report in one line** — "Intent: #<id> <kind> <title> (created|updated|
    existing), linked to #a, #b." Then start the work.
 
-The PostToolUse hook records the ids of spec/arch records written here, so
-the Stop and PreCompact hooks can hand them to `persist` for
+The PostToolUse hook records the ids of spec/arch records written or read
+here, so the Stop and PreCompact hooks can hand them to `persist` for
 reconciliation. Nothing further is required from this skill.
 
 ## Do Not

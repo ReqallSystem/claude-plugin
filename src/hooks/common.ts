@@ -156,19 +156,33 @@ export function intervalEnv(name: string, defaultMin: number): number {
   return Number.isFinite(n) ? n : defaultMin;
 }
 
-/** A spec/arch record written during this session — the agreed intent the work should satisfy. */
+/**
+ * A spec/arch record touched during this session. `written` entries come from
+ * upsert_record (the agreed intent the work should satisfy); `consulted` ones
+ * from get_record (an existing spec the intend skill selected without editing,
+ * or simply read for context). `handed_off` marks entries already given to
+ * persist by the PreCompact hook, so Stop asks for verification rather than a
+ * second reconciliation.
+ */
 export interface IntentEntry {
   id: number;
   kind: string;
   title: string;
   action?: string;
+  via?: 'written' | 'consulted';
+  handed_off?: boolean;
 }
 
 const INTENT_KINDS = new Set(['spec', 'arch']);
+const MAX_CONSULTED = 8;
 
 /** Kinds whose upserts count as intent (what the work is supposed to satisfy). */
 export function isIntentKind(kind: unknown): kind is string {
   return typeof kind === 'string' && INTENT_KINDS.has(kind);
+}
+
+export function isWritten(e: IntentEntry): boolean {
+  return e.via !== 'consulted';
 }
 
 /** Append an intent record to the session's JSONL intent file. */
@@ -181,22 +195,60 @@ export function appendIntent(key: string, entry: IntentEntry): void {
   }
 }
 
-/** Intent records for the session, de-duplicated by id (latest entry wins). */
+/**
+ * Intent records for the session, merged by id in file order: a write is
+ * sticky over a read, a later write clears a hand-off mark, and the newest
+ * title wins. Consulted-only entries are capped to the most recent few.
+ */
 export function readIntents(key: string): IntentEntry[] {
   try {
     const byId = new Map<number, IntentEntry>();
     for (const line of readFileSync(stateFile('intent', key), 'utf-8').split('\n')) {
       if (!line.trim()) continue;
+      let e: IntentEntry;
       try {
-        const e = JSON.parse(line) as IntentEntry;
-        if (typeof e.id === 'number') byId.set(e.id, e);
+        e = JSON.parse(line) as IntentEntry;
       } catch {
-        // skip malformed line
+        continue; // skip malformed line
       }
+      if (typeof e.id !== 'number') continue;
+      const prev = byId.get(e.id);
+      byId.delete(e.id); // re-insert so map order reflects most recent touch
+      if (!prev) {
+        byId.set(e.id, e);
+        continue;
+      }
+      const written = isWritten(prev) || isWritten(e);
+      byId.set(e.id, {
+        id: e.id,
+        kind: e.kind || prev.kind,
+        title: e.title || prev.title,
+        action: e.action ?? prev.action,
+        via: written ? 'written' : 'consulted',
+        handed_off: isWritten(e) && !e.handed_off ? false : (e.handed_off ?? prev.handed_off ?? false),
+      });
     }
-    return [...byId.values()];
+    const all = [...byId.values()];
+    const writtenOnes = all.filter(isWritten);
+    const consulted = all.filter((e) => !isWritten(e)).slice(-MAX_CONSULTED);
+    return [...writtenOnes, ...consulted];
   } catch {
     return [];
+  }
+}
+
+/** Rewrite the session's intent file with every entry marked as handed off to persist. */
+export function markIntentsHandedOff(key: string): void {
+  try {
+    const intents = readIntents(key);
+    if (intents.length === 0) return;
+    mkdirSync(stateDir(), { recursive: true });
+    writeFileSync(
+      stateFile('intent', key),
+      intents.map((e) => JSON.stringify({ ...e, handed_off: true })).join('\n') + '\n',
+    );
+  } catch {
+    // best-effort bookkeeping
   }
 }
 
@@ -209,19 +261,42 @@ export function clearIntents(key: string): void {
   }
 }
 
+function fmtIntent(i: IntentEntry): string {
+  return `#${i.id} ${i.kind} "${i.title.replace(/"/g, "'")}"`;
+}
+
 /**
  * Human-readable reconciliation instructions for the persist step, or '' when
- * the session recorded no intent. Shared by the Stop and PreCompact hooks.
+ * the session touched no intent. Shared by the Stop and PreCompact hooks.
  */
 export function intentContext(intents: IntentEntry[]): string {
   if (intents.length === 0) return '';
-  const list = intents
-    .map((i) => `#${i.id} ${i.kind} "${i.title.replace(/"/g, "'")}"`)
-    .join('; ');
-  return (
-    ` Intent records written this session: ${list}. Reconcile the work against them: ` +
-    `create one \`work\` record summarizing what was done; for each intent the work fulfills, ` +
-    `upsert_link work --implements--> intent and set the work record resolved; for each intent ` +
-    `not (fully) fulfilled, create a todo/open describing the gap and upsert_link todo --blocks--> intent.`
-  );
+  const fresh = intents.filter((i) => isWritten(i) && !i.handed_off);
+  const handedOff = intents.filter((i) => isWritten(i) && i.handed_off);
+  const consulted = intents.filter((i) => !isWritten(i));
+  const parts: string[] = [];
+  if (fresh.length > 0) {
+    parts.push(
+      `Intent records written this session: ${fresh.map(fmtIntent).join('; ')}. ` +
+        `Reconcile the work against them: create one \`work\` record summarizing what was done; ` +
+        `for each intent the work fulfills, upsert_link work --implements--> intent and set the work ` +
+        `record resolved; for each intent not (fully) fulfilled, create a todo/open describing the gap ` +
+        `and upsert_link todo --blocks--> intent.`,
+    );
+  }
+  if (handedOff.length > 0) {
+    parts.push(
+      `Intent records already handed to persist before compaction: ${handedOff.map(fmtIntent).join('; ')}. ` +
+        `Verify their reconciliation exists (work --implements--> intent, or todo --blocks--> intent) and ` +
+        `update the existing work record for this session; do NOT create a second work record or ` +
+        `duplicate todos.`,
+    );
+  }
+  if (consulted.length > 0) {
+    parts.push(
+      `Existing spec/arch records consulted this session: ${consulted.map(fmtIntent).join('; ')}. ` +
+        `If one of these was the agreed intent for the work, reconcile against it the same way.`,
+    );
+  }
+  return ' ' + parts.join(' ');
 }

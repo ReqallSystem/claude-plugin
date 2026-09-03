@@ -9,7 +9,7 @@
  * When the session wrote spec/arch intent records (see intent-track.ts) the
  * block reason lists them so persist reconciles the work against the intent.
  */
-import { clearIntents, clearMarker, intentContext, intervalEnv, projectName, readIntents, readMarker, readStdin, throttle, } from './common.js';
+import { clearIntents, clearMarker, intentContext, intervalEnv, isWritten, projectName, readIntents, readMarker, readStdin, throttle, } from './common.js';
 const input = readStdin();
 function block(reason) {
     process.stdout.write(JSON.stringify({ decision: 'block', reason }));
@@ -27,8 +27,9 @@ if (!input.stop_hook_active) {
         `and link related records. If the session was purely Q&A or trivial, state ` +
         `"Nothing to persist." and finish.` +
         intentContext(intents);
-    // Intent written this session is persistable work even without file edits.
-    if (readMarker(activityKey) > 0 || intents.length > 0) {
+    // Intent written this session is persistable work even without file edits;
+    // merely consulting existing specs is not.
+    if (readMarker(activityKey) > 0 || intents.some(isWritten)) {
         const interval = intervalEnv('REQALL_PERSIST_INTERVAL_MIN', 30);
         if (throttle(persistKey, interval)) {
             block(reason);

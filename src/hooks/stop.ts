@@ -14,6 +14,7 @@ import {
   clearMarker,
   intentContext,
   intervalEnv,
+  isWritten,
   projectName,
   readIntents,
   readMarker,
@@ -42,8 +43,9 @@ if (!input.stop_hook_active) {
     `"Nothing to persist." and finish.` +
     intentContext(intents);
 
-  // Intent written this session is persistable work even without file edits.
-  if (readMarker(activityKey) > 0 || intents.length > 0) {
+  // Intent written this session is persistable work even without file edits;
+  // merely consulting existing specs is not.
+  if (readMarker(activityKey) > 0 || intents.some(isWritten)) {
     const interval = intervalEnv('REQALL_PERSIST_INTERVAL_MIN', 30);
     if (throttle(persistKey, interval)) {
       block(reason);
