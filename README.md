@@ -62,7 +62,7 @@ and Windows.
 | `PostToolUse` (Write/Edit/NotebookEdit/Bash, async) | Marks the session as active and prompts background documentation of non-trivial work via the `reqall-documenter` agent; throttled |
 | `PostToolUse` (ExitPlanMode) | An accepted plan is agreed intent: instructs `reqall:intend` to find or upsert the spec/arch record for the plan and link it before work starts |
 | `PostToolUse` (reqall `upsert_record` / `get_record`, async) | Records spec/arch records touched this session to plugin state — written via `upsert_record`, consulted via `get_record` — so the persist step can reconcile the work against them even after compaction. Side-effect only |
-| `Stop` | Blocks turn completion (loop-safe) to force the persist step. Sessions with tool or subagent activity, or recorded intent, block on the standard interval; chat-only sessions block on the longer idle interval so decisions made in conversation are still captured. Lists the session's intent records so persist links fulfilled work `implements` its spec and files a blocking todo for any gap |
+| `Stop` | Blocks turn completion (loop-safe) to force the persist step. Sessions with tool or subagent activity, or recorded intent, block on the standard interval; chat-only sessions block on the longer idle interval so decisions made in conversation are still captured. Lists the session's intent records so persist writes the work record with an inline `implements` link to its spec, and a gap todo with an inline `blocks` link, in the same `upsert_record` call |
 | `SubagentStop` (async) | Marks the session as active so subagent output (plans, findings) is persisted on the standard cadence. Side-effect only: Claude Code ignores SubagentStop JSON output, so it prints nothing |
 | `PreCompact` | Persists unrecorded decisions and work before context compaction loses them; includes the session's intent records and marks them handed-off, so the later Stop asks persist to verify the reconciliation rather than repeat it |
 
@@ -75,8 +75,9 @@ intent → do the work → persist and reconcile**.
 2. When scope is agreed — a plan is accepted, or the user asks for a
    specific non-trivial change — `reqall:intend` finds or creates one
    `spec` (new behavior) or `arch` (structural decision) record describing
-   what is to be, and links it to related records. Chores, questions and
-   single-file fixes never get one.
+   what is to be, and links it to related records in the same
+   `upsert_record` call (inline `links`, server 2026.9+). Chores, questions
+   and single-file fixes never get one.
 3. The `upsert_record` / `get_record` PostToolUse hook remembers those
    spec/arch ids — including an existing spec that `intend` selected
    without editing.

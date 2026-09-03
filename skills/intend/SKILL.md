@@ -69,9 +69,14 @@ spec inflation, which is worse than a missing record.
        approach (the accepted plan summary if there is one), acceptance
        criteria, and explicit non-goals. Write for future semantic search,
        not for this session. Reference the GH issue or ticket if any.
+     - `links`: pass the relationships from step 4 **inline on this same
+       call** when the tool schema offers `links` — one call creates the
+       record and its edges. Fall back to `reqall:upsert_link` only when
+       the schema has no `links` field or when linking two records that
+       already exist.
 
-4. **Link** — For each related record found in step 2, call
-   `reqall:upsert_link`:
+4. **Link** — For each related record found in step 2 (inline via `links`
+   where possible, else `reqall:upsert_link`):
    - new spec is a `parent` of, or `related` to, an existing broader spec
    - new spec `implements` an existing arch decision
    - existing open issue/todo is `related` to the intent it motivated
@@ -88,6 +93,9 @@ reconciliation. Nothing further is required from this skill.
 
 ## Do Not
 
+- Make a separate `upsert_link` call for a link you could have passed
+  inline on the `upsert_record` call — the second call is the one that
+  gets skipped, and an unlinked spec is invisible to `impact`.
 - Create a record for work that has no agreed scope yet — ask, or wait for
   the plan to be accepted.
 - Create more than one spec/arch per task. Sub-scopes belong in the body.

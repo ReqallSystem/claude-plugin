@@ -50,8 +50,10 @@ message names one:
    record over creating one per tool use. Prefix titles: BUG:, TASK:,
    FEAT:, REFACTOR:, ARCH:, API:, DATA:, UI:, WORK:. Body: what was done,
    why, file paths, and details useful for future semantic search.
-5. Link related records found in step 3 via `reqall:upsert_link`
-   (implements, tests, blocks, parent, related). A `work` record
+5. Link related records found in step 3 — pass them as `links` on the
+   `reqall:upsert_record` call itself when the tool schema offers that
+   field (implements, tests, blocks, parent, related); use
+   `reqall:upsert_link` only when it does not. A `work` record
    `implements` the spec/arch it progresses toward, when one exists.
 6. Output a one-line summary of what was documented.
 

@@ -85,9 +85,13 @@ Prefix titles to aid scanning:
    - A short, descriptive `title` with the appropriate prefix
    - A `body` summarizing what was done and why. Include file paths,
      command output, or other details useful for future semantic search.
+   - `links` (when the tool schema offers it): the relationships from
+     step 5, inline on this same call, so the record and its edges land
+     together.
 
 5. **Upsert links** — If the search in step 3 found related records,
-   call `reqall:upsert_link` to connect them:
+   connect them — inline via `links` above, or with `reqall:upsert_link`
+   when `links` is unavailable:
    - A bug fix `implements` a spec
    - A test `tests` an architecture decision
    - A new task is `related` to or `blocks` an existing record
