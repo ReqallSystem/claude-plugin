@@ -105,6 +105,12 @@ project context post-compaction. No code change needed; documented in the
 README instead.
 
 ### 7. Consider UserPromptSubmit for per-task context
+> **Implemented 2026-09-03 (v2026.9.1, reqall_net GH #102):** a throttled
+> `UserPromptSubmit` hook (`REQALL_INTENT_INTERVAL_MIN`, default 15) nudges
+> the new `reqall:intend` skill, alongside an unthrottled `ExitPlanMode`
+> PostToolUse trigger and an `upsert_record` PostToolUse tracker that feeds
+> intent ids to the Stop/PreCompact persist prompt.
+
 `UserPromptSubmit` can inject `additionalContext` per user prompt. A
 throttled hook suggesting a Reqall search scoped to the *current* prompt
 would target context better than the one-shot SessionStart instruction,

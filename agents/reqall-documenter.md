@@ -44,11 +44,15 @@ message names one:
 4. Otherwise create the record: classify kind/status (bug fix →
    issue/resolved, new bug → issue/open, completed task → todo/resolved,
    new task → todo/open, architecture decision → arch/resolved, spec →
-   spec/open, test scenario → test/open). Prefix titles: BUG:, TASK:,
-   FEAT:, REFACTOR:, ARCH:, API:, DATA:, UI:. Body: what was done, why,
-   file paths, and details useful for future semantic search.
+   spec/open, test scenario → test/open, progress on a larger task →
+   work/active, durable reference note → info/active). Most incremental
+   activity is progress: prefer updating the session's existing `work`
+   record over creating one per tool use. Prefix titles: BUG:, TASK:,
+   FEAT:, REFACTOR:, ARCH:, API:, DATA:, UI:, WORK:. Body: what was done,
+   why, file paths, and details useful for future semantic search.
 5. Link related records found in step 3 via `reqall:upsert_link`
-   (implements, tests, blocks, parent, related).
+   (implements, tests, blocks, parent, related). A `work` record
+   `implements` the spec/arch it progresses toward, when one exists.
 6. Output a one-line summary of what was documented.
 
 Never store secrets, credentials, huge logs, or full source files.

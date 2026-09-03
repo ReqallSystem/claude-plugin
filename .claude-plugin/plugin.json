@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "reqall",
   "displayName": "Reqall",
-  "version": "2026.9.0",
+  "version": "2026.9.1",
   "description": "Persistent semantic knowledgebase for AI agents",
   "author": {
     "name": "ReqallSystem"

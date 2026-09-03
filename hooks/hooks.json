@@ -12,6 +12,17 @@
         ]
       }
     ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/src/hooks/user-prompt-submit.js\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Write|Edit|NotebookEdit",
@@ -31,6 +42,28 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/src/hooks/post-tool.js\"",
+            "timeout": 15,
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "ExitPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/src/hooks/plan-accepted.js\"",
+            "timeout": 15,
+            "statusMessage": "Recording accepted plan as Reqall intent"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__plugin_reqall_reqall__upsert_record|mcp__Reqall__upsert_record|mcp__plugin_reqall_reqall__get_record|mcp__Reqall__get_record",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/src/hooks/intent-track.js\"",
             "timeout": 15,
             "async": true
           }

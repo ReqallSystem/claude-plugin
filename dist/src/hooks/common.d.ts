@@ -8,6 +8,8 @@ export interface HookInput {
     agent_id?: string;
     agent_type?: string;
     stop_hook_active?: boolean;
+    tool_response?: unknown;
+    prompt?: string;
     [key: string]: unknown;
 }
 export declare function readStdin(): HookInput;
@@ -36,4 +38,40 @@ export declare function readMarker(key: string): number;
 /** Remove a marker once its work has been handled. */
 export declare function clearMarker(key: string): void;
 export declare function intervalEnv(name: string, defaultMin: number): number;
+/**
+ * A spec/arch record touched during this session. `written` entries come from
+ * upsert_record (the agreed intent the work should satisfy); `consulted` ones
+ * from get_record (an existing spec the intend skill selected without editing,
+ * or simply read for context). `handed_off` marks entries already given to
+ * persist by the PreCompact hook, so Stop asks for verification rather than a
+ * second reconciliation.
+ */
+export interface IntentEntry {
+    id: number;
+    kind: string;
+    title: string;
+    action?: string;
+    via?: 'written' | 'consulted';
+    handed_off?: boolean;
+}
+/** Kinds whose upserts count as intent (what the work is supposed to satisfy). */
+export declare function isIntentKind(kind: unknown): kind is string;
+export declare function isWritten(e: IntentEntry): boolean;
+/** Append an intent record to the session's JSONL intent file. */
+export declare function appendIntent(key: string, entry: IntentEntry): void;
+/**
+ * Intent records for the session, merged by id in file order: a write is
+ * sticky over a read, a later write clears a hand-off mark, and the newest
+ * title wins. Consulted-only entries are capped to the most recent few.
+ */
+export declare function readIntents(key: string): IntentEntry[];
+/** Rewrite the session's intent file with every entry marked as handed off to persist. */
+export declare function markIntentsHandedOff(key: string): void;
+/** Remove the session's intent file once the work has been reconciled. */
+export declare function clearIntents(key: string): void;
+/**
+ * Human-readable reconciliation instructions for the persist step, or '' when
+ * the session touched no intent. Shared by the Stop and PreCompact hooks.
+ */
+export declare function intentContext(intents: IntentEntry[]): string;
 //# sourceMappingURL=common.d.ts.map

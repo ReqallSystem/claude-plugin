@@ -42,7 +42,15 @@ build/deploy commands, database migrations, configuration changes, etc.
 | Architectural change or decision   | arch    | resolved |
 | New or updated specification       | spec    | open     |
 | Test scenario added                | test    | open     |
+| Progress on a larger task (a step, not a standalone deliverable) | work | active |
+| Durable reference note: fact, how-to, convention that fits no other kind | info | active |
 | Trivial / no-op                    | --      | skip     |
+
+Most incremental tool activity is **progress**, not a finished deliverable.
+Record it as `work` — and prefer updating the session's existing `work`
+record (found via search in step 3) over creating one per tool use. Work
+records are ephemeral: SLEEP promotes their durable content and deletes the
+log. Use `todo/resolved` only for a discrete task that is genuinely complete.
 
 ## Title Conventions
 
@@ -50,6 +58,7 @@ Prefix titles to aid scanning:
 - Issues: `BUG:`, `TASK:`, `BLOCKER:`
 - Specs: `ARCH:`, `API:`, `AUTH:`, `DATA:`, `UI:`
 - Features: `FEAT:`, `REFACTOR:`
+- Work logs: `WORK:`
 
 ## Steps
 
@@ -83,6 +92,8 @@ Prefix titles to aid scanning:
    - A test `tests` an architecture decision
    - A new task is `related` to or `blocks` an existing record
    - A spec is `parent` of sub-specifications
+   - A `work` record `implements` the spec/arch it is progressing toward
+     (intent recorded by `reqall:intend`), when one exists
 
 6. **Summarize** — Output a one-line summary of what was documented
    (or "Nothing to document." if skipped).

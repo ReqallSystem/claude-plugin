@@ -53,6 +53,12 @@ Load project context from Reqall before starting work.
    Call `reqall:get_record` for full details on any records that look
    particularly relevant.
 
+7. **Hand off to intent (if scope is agreed)** — If the task has agreed
+   scope — a plan was accepted, or the user asked for a specific,
+   non-trivial change — invoke `reqall:intend` before the first edit so the
+   spec/arch record for what is to be exists and is linked. For chores,
+   questions, and single-file fixes, skip this.
+
 ## When to Skip Steps
 
 - Simple question or chat (no coding task): only run step 3 (search).

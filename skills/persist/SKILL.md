@@ -6,11 +6,13 @@ allowed-tools:
   - mcp__plugin_reqall_reqall__upsert_project
   - mcp__plugin_reqall_reqall__search
   - mcp__plugin_reqall_reqall__list_records
+  - mcp__plugin_reqall_reqall__get_record
   - mcp__plugin_reqall_reqall__upsert_record
   - mcp__plugin_reqall_reqall__upsert_link
   - mcp__Reqall__upsert_project
   - mcp__Reqall__search
   - mcp__Reqall__list_records
+  - mcp__Reqall__get_record
   - mcp__Reqall__upsert_record
   - mcp__Reqall__upsert_link
 ---
@@ -32,13 +34,22 @@ produce multiple artifacts worth tracking.
 | Architectural change or decision   | arch    | resolved |
 | New or updated specification       | spec    | open     |
 | Test scenario added                | test    | open     |
+| Session progress log: what was done, in what order, against which intent | work | resolved (or `active` if the task continues next session) |
+| Durable reference note: fact, how-to, convention that fits no other kind | info | active |
 | Trivial / Q&A / unclassifiable     | --      | skip     |
+
+Prefer **one `work` record per session** over a pile of `todo/resolved`
+records for finished steps. Work records are ephemeral: SLEEP later promotes
+their durable content into spec/arch/info records and deletes the log, so
+they are the right place for "what happened" narrative. Reserve `todo` for
+things still to do and `issue` for bugs.
 
 ## Title Conventions
 
 Prefix titles to aid scanning:
 - Issues: `BUG:`, `TASK:`, `BLOCKER:`, `QUESTION:`
 - Specs: `ARCH:`, `API:`, `AUTH:`, `DATA:`, `UI:`
+- Work logs: `WORK:`
 
 ## Steps
 
@@ -79,8 +90,24 @@ Prefix titles to aid scanning:
    - A `body` summarizing what was done, why, and any relevant context.
      Include enough detail for semantic search to find this later.
 
-4. **Create links** — For each meaningful relationship between records
-   (new or existing), call `reqall:upsert_link`:
+4. **Reconcile intent** — The hook message may list "Intent records
+   written this session" (spec/arch records created by `reqall:intend` or
+   an accepted plan). If it does not, but you know a spec/arch was written
+   or agreed this session, treat it the same way. For each intent record:
+   - Call `reqall:get_record` if you need its acceptance criteria.
+   - **Fulfilled** by the session's work → `reqall:upsert_link` the `work`
+     record `implements` the intent record, and set the `work` record
+     `status: "resolved"`. Leave the spec itself `open` unless the user
+     treats specs as tickets to close.
+   - **Partly or not fulfilled** → create a `todo`/`open` naming the gap
+     (what remains, why it was deferred) and `reqall:upsert_link` it
+     `blocks` the intent record. Keep the `work` record `active`.
+   - **Superseded** (the agreed approach changed mid-session) → update the
+     intent record's body to the approach actually taken, and note the
+     change in the `work` record. Do not leave a stale spec behind.
+
+5. **Create links** — For each other meaningful relationship between
+   records (new or existing), call `reqall:upsert_link`:
    - A bug fix `implements` a spec
    - A test `tests` an architecture decision
    - A new task is `related` to or `blocks` an existing record
@@ -88,10 +115,10 @@ Prefix titles to aid scanning:
 
    Use `reqall:search` to find existing records worth linking to.
 
-5. **Summarize** — Tell the user what was persisted: records
-   created/updated, links established.
+6. **Summarize** — Tell the user what was persisted: records
+   created/updated, links established, intent fulfilled or blocked.
 
-6. **Verify** — Call `reqall:list_records` with the `project_id` to
+7. **Verify** — Call `reqall:list_records` with the `project_id` to
    review the records just created or updated. Cross-check against the
    work items identified in step 2. If anything was missed, create it
    now.
