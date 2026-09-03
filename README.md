@@ -75,8 +75,9 @@ intent → do the work → persist and reconcile**.
 2. When scope is agreed — a plan is accepted, or the user asks for a
    specific non-trivial change — `reqall:intend` finds or creates one
    `spec` (new behavior) or `arch` (structural decision) record describing
-   what is to be, and links it to related records. Chores, questions and
-   single-file fixes never get one.
+   what is to be, and links it to related records in the same
+   `upsert_record` call (inline `links`, server 2026.9+). Chores, questions
+   and single-file fixes never get one.
 3. The `upsert_record` / `get_record` PostToolUse hook remembers those
    spec/arch ids — including an existing spec that `intend` selected
    without editing.

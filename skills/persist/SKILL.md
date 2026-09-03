@@ -89,25 +89,34 @@ Prefix titles to aid scanning:
    - A short, descriptive `title` with the appropriate prefix
    - A `body` summarizing what was done, why, and any relevant context.
      Include enough detail for semantic search to find this later.
+   - `links` (when the tool schema offers it): the record's relationships
+     from steps 4 and 5, inline — e.g. the `work` record with
+     `{target_id: <spec>, relationship: "implements"}`, a gap `todo` with
+     `{target_id: <spec>, relationship: "blocks"}`. One call, no separate
+     `upsert_link` to forget. Each inline link succeeds or fails on its own
+     and the result lists which; use `reqall:upsert_link` only between two
+     records that already exist or when `links` is unavailable.
 
 4. **Reconcile intent** — The hook message may list "Intent records
    written this session" (spec/arch records created by `reqall:intend` or
    an accepted plan). If it does not, but you know a spec/arch was written
    or agreed this session, treat it the same way. For each intent record:
    - Call `reqall:get_record` if you need its acceptance criteria.
-   - **Fulfilled** by the session's work → `reqall:upsert_link` the `work`
-     record `implements` the intent record, and set the `work` record
-     `status: "resolved"`. Leave the spec itself `open` unless the user
-     treats specs as tickets to close.
+   - **Fulfilled** by the session's work → the `work` record `implements`
+     the intent record (inline `links` on its upsert, or
+     `reqall:upsert_link`), and set the `work` record `status: "resolved"`.
+     Leave the spec itself `open` unless the user treats specs as tickets
+     to close.
    - **Partly or not fulfilled** → create a `todo`/`open` naming the gap
-     (what remains, why it was deferred) and `reqall:upsert_link` it
-     `blocks` the intent record. Keep the `work` record `active`.
+     (what remains, why it was deferred) with an inline link that `blocks`
+     the intent record. Keep the `work` record `active`.
    - **Superseded** (the agreed approach changed mid-session) → update the
      intent record's body to the approach actually taken, and note the
      change in the `work` record. Do not leave a stale spec behind.
 
 5. **Create links** — For each other meaningful relationship between
-   records (new or existing), call `reqall:upsert_link`:
+   records: inline via `links` on the record's own upsert, or
+   `reqall:upsert_link` between two records that already exist:
    - A bug fix `implements` a spec
    - A test `tests` an architecture decision
    - A new task is `related` to or `blocks` an existing record
