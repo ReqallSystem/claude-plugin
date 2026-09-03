@@ -8,6 +8,8 @@ export interface HookInput {
     agent_id?: string;
     agent_type?: string;
     stop_hook_active?: boolean;
+    tool_response?: unknown;
+    prompt?: string;
     [key: string]: unknown;
 }
 export declare function readStdin(): HookInput;
@@ -36,4 +38,24 @@ export declare function readMarker(key: string): number;
 /** Remove a marker once its work has been handled. */
 export declare function clearMarker(key: string): void;
 export declare function intervalEnv(name: string, defaultMin: number): number;
+/** A spec/arch record written during this session — the agreed intent the work should satisfy. */
+export interface IntentEntry {
+    id: number;
+    kind: string;
+    title: string;
+    action?: string;
+}
+/** Kinds whose upserts count as intent (what the work is supposed to satisfy). */
+export declare function isIntentKind(kind: unknown): kind is string;
+/** Append an intent record to the session's JSONL intent file. */
+export declare function appendIntent(key: string, entry: IntentEntry): void;
+/** Intent records for the session, de-duplicated by id (latest entry wins). */
+export declare function readIntents(key: string): IntentEntry[];
+/** Remove the session's intent file once the work has been reconciled. */
+export declare function clearIntents(key: string): void;
+/**
+ * Human-readable reconciliation instructions for the persist step, or '' when
+ * the session recorded no intent. Shared by the Stop and PreCompact hooks.
+ */
+export declare function intentContext(intents: IntentEntry[]): string;
 //# sourceMappingURL=common.d.ts.map

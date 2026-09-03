@@ -159,6 +159,138 @@ test('subagent-stop is silent but records activity for the stop hook', () => {
   assert.equal(stop.decision, 'block', 'subagent activity should enable the active persist path');
 });
 
+test('user-prompt-submit nudges intend for task-shaped prompts, then throttles', () => {
+  const data = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_INTENT_INTERVAL_MIN: '15' };
+  const input = {
+    hook_event_name: 'UserPromptSubmit',
+    session_id: 'u1',
+    prompt: 'Please add rate limiting to the upload endpoint and cover it with tests',
+  };
+  const first = runHook('user-prompt-submit', input, env);
+  assert.equal(first.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
+  assert.match(first.hookSpecificOutput.additionalContext, /reqall:intend/);
+  assert.match(first.hookSpecificOutput.additionalContext, /TestProj/);
+  assert.equal(runHook('user-prompt-submit', input, env), null, 'throttled within interval');
+});
+
+test('user-prompt-submit skips short prompts and slash commands', () => {
+  const data = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_INTENT_INTERVAL_MIN: '0' };
+  assert.equal(runHook('user-prompt-submit', { session_id: 'u2', prompt: 'yes, go ahead' }, env), null);
+  assert.equal(
+    runHook('user-prompt-submit', { session_id: 'u2', prompt: '/reqall:review issues please and thank you' }, env),
+    null,
+  );
+  assert.equal(runHook('user-prompt-submit', { session_id: 'u2' }, env), null);
+});
+
+test('plan-accepted instructs intend after ExitPlanMode and marks activity', () => {
+  const data = dataDir();
+  const env = {
+    CLAUDE_PLUGIN_DATA: data,
+    REQALL_PERSIST_INTERVAL_MIN: '0',
+    REQALL_IDLE_PERSIST_INTERVAL_MIN: '0',
+  };
+  const out = runHook(
+    'plan-accepted',
+    { hook_event_name: 'PostToolUse', session_id: 'p1', tool_name: 'ExitPlanMode', tool_input: {} },
+    env,
+  );
+  assert.equal(out.hookSpecificOutput.hookEventName, 'PostToolUse');
+  assert.match(out.hookSpecificOutput.additionalContext, /reqall:intend/);
+  assert.match(out.hookSpecificOutput.additionalContext, /plan/i);
+  const stop = runHook('stop', { session_id: 'p1', stop_hook_active: false }, env);
+  assert.equal(stop.decision, 'block', 'plan acceptance counts as session activity');
+});
+
+test('plan-accepted is silent for other tools', () => {
+  assert.equal(runHook('plan-accepted', { tool_name: 'Write', tool_input: { file_path: '/a' } }), null);
+});
+
+const specResponse = JSON.stringify({
+  ok: true,
+  data: {
+    action: 'created',
+    record: { id: 4695, project_id: 1, kind: 'spec', title: 'SPEC: Intent flow', status: 'open' },
+  },
+});
+
+test('intent-track records spec upserts (content-block response) and stop lists them for reconciliation', () => {
+  const data = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_PERSIST_INTERVAL_MIN: '0', REQALL_IDLE_PERSIST_INTERVAL_MIN: '0' };
+  const out = runHook(
+    'intent-track',
+    {
+      hook_event_name: 'PostToolUse',
+      session_id: 'i1',
+      tool_name: 'mcp__plugin_reqall_reqall__upsert_record',
+      tool_input: { project_id: 1, kind: 'spec', title: 'SPEC: Intent flow', body: '...' },
+      tool_response: [{ type: 'text', text: specResponse }],
+    },
+    env,
+  );
+  assert.equal(out, null, 'intent-track is side-effect only');
+  const stop = runHook('stop', { session_id: 'i1', stop_hook_active: false }, env);
+  assert.equal(stop.decision, 'block', 'intent alone is persistable work');
+  assert.match(stop.reason, /Intent records written this session: #4695 spec "SPEC: Intent flow"/);
+  assert.match(stop.reason, /implements/);
+  assert.match(stop.reason, /blocks/);
+  // Cleared once persist was forced: PreCompact no longer lists it.
+  const pc = runHook('pre-compact', { session_id: 'i1' }, env);
+  assert.doesNotMatch(pc.hookSpecificOutput.additionalContext, /#4695/);
+});
+
+test('intent-track accepts an object response, the claude.ai namespace, and de-duplicates by id', () => {
+  const data = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data };
+  const base = { session_id: 'i2', tool_name: 'mcp__Reqall__upsert_record' };
+  runHook('intent-track', { ...base, tool_input: { kind: 'arch', title: 'ARCH: X' }, tool_response: JSON.parse(specResponse) }, env);
+  runHook(
+    'intent-track',
+    {
+      ...base,
+      tool_input: { id: 4695, body: 'updated' },
+      tool_response: { structuredContent: { ok: true, data: { action: 'updated', record: { id: 4695, kind: 'spec', title: 'SPEC: Intent flow v2' } } } },
+    },
+    env,
+  );
+  const pc = runHook('pre-compact', { session_id: 'i2' }, env);
+  const ctx = pc.hookSpecificOutput.additionalContext;
+  assert.match(ctx, /#4695 spec "SPEC: Intent flow v2"/);
+  assert.equal(ctx.match(/#4695/g).length, 1, 'same record listed once');
+});
+
+test('intent-track ignores non-intent kinds and other tools', () => {
+  const data = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data };
+  const todo = JSON.stringify({ ok: true, data: { action: 'created', record: { id: 7, kind: 'todo', title: 'TASK: x' } } });
+  runHook(
+    'intent-track',
+    { session_id: 'i3', tool_name: 'mcp__plugin_reqall_reqall__upsert_record', tool_input: { kind: 'todo' }, tool_response: [{ type: 'text', text: todo }] },
+    env,
+  );
+  runHook(
+    'intent-track',
+    { session_id: 'i3', tool_name: 'mcp__plugin_reqall_reqall__upsert_link', tool_input: {}, tool_response: specResponse },
+    env,
+  );
+  const pc = runHook('pre-compact', { session_id: 'i3' }, env);
+  assert.doesNotMatch(pc.hookSpecificOutput.additionalContext, /Intent records/);
+});
+
+test('intent-track falls back to tool_input when the response carries no record', () => {
+  const data = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data };
+  runHook(
+    'intent-track',
+    { session_id: 'i4', tool_name: 'mcp__plugin_reqall_reqall__upsert_record', tool_input: { id: 42, kind: 'spec', title: 'SPEC: from input' }, tool_response: 'ok' },
+    env,
+  );
+  const pc = runHook('pre-compact', { session_id: 'i4' }, env);
+  assert.match(pc.hookSpecificOutput.additionalContext, /#42 spec "SPEC: from input"/);
+});
+
 test('pre-compact instructs persist before compaction', () => {
   const out = runHook('pre-compact', { hook_event_name: 'PreCompact', session_id: 's8' });
   assert.equal(out.hookSpecificOutput.hookEventName, 'PreCompact');

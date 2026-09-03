@@ -1,7 +1,7 @@
 # Reqall Claude Plugin
 
 Persistent semantic memory for Claude Code agents.
-Automatically gleans context at session start, surfaces file-specific records before edits, documents work incrementally, and persists session results — backed by the Reqall knowledgebase.
+Automatically gleans context at session start, records agreed intent before work begins, surfaces file-specific records before edits, documents work incrementally, and persists session results reconciled against that intent — backed by the Reqall knowledgebase.
 
 ## Installation
 
@@ -57,16 +57,38 @@ and Windows.
 | Event | Behavior |
 |-------|----------|
 | `SessionStart` | Injects project context instructions — initialize the project, search for relevant records, list open work. Also re-fires after context compaction (`source: compact`), restoring Reqall awareness in long sessions |
+| `UserPromptSubmit` | Throttled nudge to run `reqall:intend` when a prompt starts a task with agreed scope; skips short prompts and slash commands |
 | `PreToolUse` (Write/Edit/NotebookEdit) | Surfaces file-specific records (specs, issues, decisions) before a file is modified |
 | `PostToolUse` (Write/Edit/NotebookEdit/Bash, async) | Marks the session as active and prompts background documentation of non-trivial work via the `reqall-documenter` agent; throttled |
-| `Stop` | Blocks turn completion (loop-safe) to force the persist step. Sessions with tool or subagent activity block on the standard interval; chat-only sessions block on the longer idle interval so decisions made in conversation are still captured |
+| `PostToolUse` (ExitPlanMode) | An accepted plan is agreed intent: instructs `reqall:intend` to find or upsert the spec/arch record for the plan and link it before work starts |
+| `PostToolUse` (reqall `upsert_record`, async) | Records the ids of spec/arch records written this session to plugin state so the persist step can reconcile the work against them. Side-effect only |
+| `Stop` | Blocks turn completion (loop-safe) to force the persist step. Sessions with tool or subagent activity, or recorded intent, block on the standard interval; chat-only sessions block on the longer idle interval so decisions made in conversation are still captured. Lists the session's intent records so persist links fulfilled work `implements` its spec and files a blocking todo for any gap |
 | `SubagentStop` (async) | Marks the session as active so subagent output (plans, findings) is persisted on the standard cadence. Side-effect only: Claude Code ignores SubagentStop JSON output, so it prints nothing |
-| `PreCompact` | Persists unrecorded decisions and work before context compaction loses them |
+| `PreCompact` | Persists unrecorded decisions and work before context compaction loses them; includes the session's intent records |
+
+### Intent-before-work
+
+The worker flow the plugin drives is: **search for context → record agreed
+intent → do the work → persist and reconcile**.
+
+1. `reqall:context` loads project memory at session start.
+2. When scope is agreed — a plan is accepted, or the user asks for a
+   specific non-trivial change — `reqall:intend` finds or creates one
+   `spec` (new behavior) or `arch` (structural decision) record describing
+   what is to be, and links it to related records. Chores, questions and
+   single-file fixes never get one.
+3. The `upsert_record` PostToolUse hook remembers those spec/arch ids.
+4. At Stop / PreCompact, `reqall:persist` writes a `work` record for the
+   session and reconciles it: fulfilled intent → `work --implements-->
+   spec` and the work is resolved; unfulfilled intent → a `todo` that
+   `blocks` the spec. Work records are ephemeral; SLEEP promotes their
+   durable content and deletes the log.
 
 ### Skills
 
 - `/reqall:context` — Initialize project and gather relevant context before starting work
-- `/reqall:persist` — Classify and persist all work completed in a session
+- `/reqall:intend` — Record agreed intent (one spec or arch record plus links) before starting work
+- `/reqall:persist` — Classify and persist all work completed in a session, reconciling it against recorded intent
 - `reqall:document` — Document a single work item (agent-only; hidden from the `/` menu)
 - `/reqall:triage` — Classify incoming issues, gather structured details, and create prioritized records (user-invoked)
 - `/reqall:review` — Interactive review and triage of open records (user-invoked)
@@ -106,6 +128,7 @@ Claude Code refuses to substitute plugin config into shell-executed helpers.
 | `REQALL_API_KEY` | unset | Bearer token for headless/CI use; when set, replaces the OAuth browser flow |
 | `REQALL_PROJECT_NAME` | auto-detected | Override project name (else git `origin` org/repo, else the machine project `.machine/<hostname>/<os-user>`) |
 | `REQALL_MACHINE_NAME` | short hostname | Overrides the hostname segment of the machine project — set in CI/containers with ephemeral hostnames |
+| `REQALL_INTENT_INTERVAL_MIN` | `15` | Minimum minutes between UserPromptSubmit intent nudges (0 disables throttling). The ExitPlanMode trigger is never throttled |
 | `REQALL_DOC_INTERVAL_MIN` | `10` | Minimum minutes between PostToolUse documentation prompts (0 disables throttling) |
 | `REQALL_PERSIST_INTERVAL_MIN` | `30` | Minimum minutes between Stop persist blocks for sessions with tool/subagent activity (0 disables throttling) |
 | `REQALL_IDLE_PERSIST_INTERVAL_MIN` | `120` | Minimum minutes between Stop persist blocks for chat-only sessions (0 disables idle blocks entirely) |

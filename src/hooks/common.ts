@@ -7,7 +7,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import { hostname as osHostname, userInfo } from 'node:os';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export interface HookInput {
@@ -20,6 +20,8 @@ export interface HookInput {
   agent_id?: string;
   agent_type?: string;
   stop_hook_active?: boolean;
+  tool_response?: unknown;
+  prompt?: string;
   [key: string]: unknown;
 }
 
@@ -152,4 +154,74 @@ export function intervalEnv(name: string, defaultMin: number): number {
   if (raw === undefined || raw === '') return defaultMin;
   const n = Number(raw);
   return Number.isFinite(n) ? n : defaultMin;
+}
+
+/** A spec/arch record written during this session — the agreed intent the work should satisfy. */
+export interface IntentEntry {
+  id: number;
+  kind: string;
+  title: string;
+  action?: string;
+}
+
+const INTENT_KINDS = new Set(['spec', 'arch']);
+
+/** Kinds whose upserts count as intent (what the work is supposed to satisfy). */
+export function isIntentKind(kind: unknown): kind is string {
+  return typeof kind === 'string' && INTENT_KINDS.has(kind);
+}
+
+/** Append an intent record to the session's JSONL intent file. */
+export function appendIntent(key: string, entry: IntentEntry): void {
+  try {
+    mkdirSync(stateDir(), { recursive: true });
+    appendFileSync(stateFile('intent', key), JSON.stringify(entry) + '\n');
+  } catch {
+    // best-effort bookkeeping
+  }
+}
+
+/** Intent records for the session, de-duplicated by id (latest entry wins). */
+export function readIntents(key: string): IntentEntry[] {
+  try {
+    const byId = new Map<number, IntentEntry>();
+    for (const line of readFileSync(stateFile('intent', key), 'utf-8').split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const e = JSON.parse(line) as IntentEntry;
+        if (typeof e.id === 'number') byId.set(e.id, e);
+      } catch {
+        // skip malformed line
+      }
+    }
+    return [...byId.values()];
+  } catch {
+    return [];
+  }
+}
+
+/** Remove the session's intent file once the work has been reconciled. */
+export function clearIntents(key: string): void {
+  try {
+    rmSync(stateFile('intent', key), { force: true });
+  } catch {
+    // best-effort bookkeeping
+  }
+}
+
+/**
+ * Human-readable reconciliation instructions for the persist step, or '' when
+ * the session recorded no intent. Shared by the Stop and PreCompact hooks.
+ */
+export function intentContext(intents: IntentEntry[]): string {
+  if (intents.length === 0) return '';
+  const list = intents
+    .map((i) => `#${i.id} ${i.kind} "${i.title.replace(/"/g, "'")}"`)
+    .join('; ');
+  return (
+    ` Intent records written this session: ${list}. Reconcile the work against them: ` +
+    `create one \`work\` record summarizing what was done; for each intent the work fulfills, ` +
+    `upsert_link work --implements--> intent and set the work record resolved; for each intent ` +
+    `not (fully) fulfilled, create a todo/open describing the gap and upsert_link todo --blocks--> intent.`
+  );
 }
