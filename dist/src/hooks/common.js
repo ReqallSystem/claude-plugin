@@ -239,16 +239,19 @@ export function intentContext(intents) {
     const parts = [];
     if (fresh.length > 0) {
         parts.push(`Intent records written this session: ${fresh.map(fmtIntent).join('; ')}. ` +
-            `Reconcile the work against them: create one \`work\` record summarizing what was done; ` +
-            `for each intent the work fulfills, upsert_link work --implements--> intent and set the work ` +
-            `record resolved; for each intent not (fully) fulfilled, create a todo/open describing the gap ` +
-            `and upsert_link todo --blocks--> intent.`);
+            `Reconcile the work against them: upsert one \`work\` record summarizing what was done, ` +
+            `passing its links inline on that same upsert_record call — for each intent the work ` +
+            `fulfills, links: [{target_id: <intent id>, relationship: "implements"}] and status resolved; ` +
+            `for each intent not (fully) fulfilled, upsert a todo/open describing the gap with ` +
+            `links: [{target_id: <intent id>, relationship: "blocks"}]. Do not make a separate ` +
+            `upsert_link call for a link that can go inline.`);
     }
     if (handedOff.length > 0) {
         parts.push(`Intent records already handed to persist before compaction: ${handedOff.map(fmtIntent).join('; ')}. ` +
             `Verify their reconciliation exists (work --implements--> intent, or todo --blocks--> intent) and ` +
             `update the existing work record for this session; do NOT create a second work record or ` +
-            `duplicate todos.`);
+            `duplicate todos. If a link is missing, add it inline via links on the existing record's ` +
+            `upsert_record (id + links), not a separate upsert_link call.`);
     }
     if (consulted.length > 0) {
         parts.push(`Existing spec/arch records consulted this session: ${consulted.map(fmtIntent).join('; ')}. ` +

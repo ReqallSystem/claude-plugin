@@ -234,8 +234,10 @@ test('intent-track records spec upserts (content-block response) and stop lists 
   const stop = runHook('stop', { session_id: 'i1', stop_hook_active: false }, env);
   assert.equal(stop.decision, 'block', 'intent alone is persistable work');
   assert.match(stop.reason, /Intent records written this session: #4695 spec "SPEC: Intent flow"/);
-  assert.match(stop.reason, /implements/);
-  assert.match(stop.reason, /blocks/);
+  // Links ride inline on upsert_record; the prompt must never ask for the second call.
+  assert.match(stop.reason, /links: \[\{target_id: <intent id>, relationship: "implements"\}\]/);
+  assert.match(stop.reason, /links: \[\{target_id: <intent id>, relationship: "blocks"\}\]/);
+  assert.doesNotMatch(stop.reason, /upsert_link (work|todo)/);
   // Cleared once persist was forced: PreCompact no longer lists it.
   const pc = runHook('pre-compact', { session_id: 'i1' }, env);
   assert.doesNotMatch(pc.hookSpecificOutput.additionalContext, /#4695/);
@@ -359,6 +361,7 @@ test('pre-compact marks intents handed off; stop then asks to verify rather than
   assert.equal(stop.decision, 'block', 'handed-off intent is still persistable work');
   assert.match(stop.reason, /already handed to persist before compaction: #4695/);
   assert.match(stop.reason, /do NOT create a second work record/);
+  assert.match(stop.reason, /add it inline via links on the existing record's upsert_record/);
   assert.doesNotMatch(stop.reason, /Intent records written this session/);
 });
 
