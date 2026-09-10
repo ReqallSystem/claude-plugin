@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * PostToolUse (reqall upsert_record | get_record | upsert_project |
- * subscribe_project): side-effect-only bookkeeping for the other hooks.
- * Prints nothing.
+ * PostToolUse (reqall upsert_record | get_record | upsert_link |
+ * upsert_project | subscribe_project | poll_subscriptions): side-effect-only
+ * bookkeeping for the other hooks. Prints nothing.
  *
  * - upsert_record of a spec/arch → `written` intent; get_record of one →
  *   `consulted` intent (the intend skill reads the record it selects, so
@@ -11,15 +11,33 @@
  *   this session's own writes; an outcome (non-intent) record whose inline
  *   links implement/block a tracked intent marks that intent reconciled,
  *   which is what lets the Stop hook's verification pass clear it.
+ * - upsert_link that implements/blocks a tracked intent (the persist skill's
+ *   repair for a failed inline link) reconciles it the same way.
  * - upsert_project → project_id / project_name for later polls.
  * - subscribe_project → subscribed_project_id, so UserPromptSubmit knows the
- *   model already subscribed and can ask it to poll.
+ *   model already subscribed and can ask it to poll, or to rebind after the
+ *   session's project changes. The name the subscription was bound under is
+ *   filled by whichever of the two trackers lands second (this hook runs
+ *   async, so upsert_project's may finish after subscribe_project's).
+ * - poll_subscriptions by the model → own-write ids whose actor=self events
+ *   were delivered are retired, so a later same-account edit still shows.
  *
  * The MCP tool response reaches hooks either as a content-block array
  * ([{type:'text', text:'{...}'}]) or as a parsed object, so the record is
  * located by walking every string/object in the payload.
  */
-import { appendIntent, isIntentKind, parseProjectId, readIntents, readStdin, sessionKey, updateState } from './common.js';
+import {
+  appendIntent,
+  consumedOwnIds,
+  isIntentKind,
+  parseProjectId,
+  readIntents,
+  readState,
+  readStdin,
+  retireOwnIds,
+  sessionKey,
+  updateState,
+} from './common.js';
 
 interface FoundRecord {
   id?: number;
@@ -29,6 +47,8 @@ interface FoundRecord {
   ok?: boolean;
   project?: { id?: unknown; name?: unknown };
   subscription?: { project_id?: unknown };
+  /** A poll_subscriptions payload ({results: [...]}) when present. */
+  poll?: unknown;
   /** Successful inline links: intent ids targeted by implements/blocks. */
   linked: number[];
 }
@@ -65,6 +85,7 @@ function walk(value: unknown, found: FoundRecord, depth = 0): void {
     if (obj.subscription && typeof obj.subscription === 'object' && !found.subscription) {
       found.subscription = obj.subscription as FoundRecord['subscription'];
     }
+    if (Array.isArray(obj.results) && found.poll === undefined) found.poll = obj;
     // Inline link results: {target_id, relationship, action: created|existing|error}
     if (
       typeof obj.target_id === 'number' &&
@@ -79,7 +100,7 @@ function walk(value: unknown, found: FoundRecord, depth = 0): void {
 }
 
 const input = readStdin();
-const match = /^mcp__[A-Za-z0-9_]+__(upsert_record|get_record|upsert_project|subscribe_project)$/.exec(input.tool_name ?? '');
+const match = /^mcp__[A-Za-z0-9_]+__(upsert_record|get_record|upsert_link|upsert_project|subscribe_project|poll_subscriptions)$/.exec(input.tool_name ?? '');
 
 if (match) {
   const op = match[1];
@@ -96,6 +117,7 @@ if (match) {
       updateState(key, (st) => {
         st.project_id = id;
         if (name) st.project_name = name;
+        if (name && st.subscribed_project_id === id) st.subscribed_project_name = name;
       });
     }
   } else if (op === 'subscribe_project' && !failed) {
@@ -105,7 +127,33 @@ if (match) {
         : typeof toolInput.project_id === 'number'
           ? toolInput.project_id
           : undefined;
-    if (pid !== undefined) updateState(key, (st) => (st.subscribed_project_id = pid));
+    if (pid !== undefined) {
+      updateState(key, (st) => {
+        st.subscribed_project_id = pid;
+        // The name is only known when the model just bound this same project.
+        st.subscribed_project_name = st.project_id === pid ? st.project_name : undefined;
+      });
+    }
+  } else if (op === 'poll_subscriptions' && !failed) {
+    const own = readState(key).written_ids ?? [];
+    if (own.length > 0 && found.poll !== undefined) retireOwnIds(key, consumedOwnIds(found.poll, own));
+  } else if (op === 'upsert_link' && !failed) {
+    // A repaired link is as good as an inline one for reconciliation; the
+    // response carries the link, else trust the input on success. Only a
+    // record-to-record link can cover an intent (a project id can collide
+    // numerically), and a record cannot cover itself.
+    const rel = toolInput.relationship;
+    const isRecords = (t: unknown): boolean => t === undefined || t === 'records';
+    const wellFormed = isRecords(toolInput.source_table) && isRecords(toolInput.target_table) && toolInput.source_id !== toolInput.target_id;
+    const fromInput = typeof toolInput.target_id === 'number' && (rel === 'implements' || rel === 'blocks') ? [toolInput.target_id] : [];
+    const targets = wellFormed ? (found.linked.length > 0 ? found.linked : fromInput) : [];
+    const intentIds = new Set(readIntents(key).map((i) => i.id));
+    const covered = targets.filter((t) => intentIds.has(t));
+    if (covered.length > 0) {
+      updateState(key, (st) => {
+        st.reconciled = [...new Set([...(st.reconciled ?? []), ...covered])];
+      });
+    }
   } else if (op === 'get_record' || op === 'upsert_record') {
     const via = op === 'get_record' ? 'consulted' : 'written';
     const id = found.id ?? (typeof toolInput.id === 'number' ? toolInput.id : undefined);

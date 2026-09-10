@@ -75,8 +75,28 @@ export function extractProjectHint(text: string | undefined): string | undefined
   if (!text) return undefined;
   const m = PROJECT_KV.exec(text);
   if (!m) return undefined;
-  const value = (m[1] ?? m[2] ?? m[3] ?? m[4] ?? '').trim();
+  // An unquoted value in prose can carry sentence punctuation
+  // (`project_name=acme/widgets: refactor …`); quoted forms are taken as-is.
+  const value = (m[1] ?? m[2] ?? m[3] ?? (m[4] ?? '').replace(/[.,:;!?)\]]+$/, '')).trim();
   return value || undefined;
+}
+
+/** Project names are unique case-insensitively server-side; compare the same way. */
+export function sameProject(a: string | undefined, b: string | undefined): boolean {
+  return a !== undefined && b !== undefined && a.toLowerCase() === b.toLowerCase();
+}
+
+/**
+ * Whether the session's subscription (if any) was bound under a different
+ * project than the one now resolved — a later `project_name=` selection in a
+ * non-repo session, for instance. Unknown binding names count as current.
+ */
+export function subscriptionStale(st: SessionState, name: string): boolean {
+  return (
+    st.subscribed_project_id !== undefined &&
+    st.subscribed_project_name !== undefined &&
+    !sameProject(st.subscribed_project_name, name)
+  );
 }
 
 /**
@@ -204,6 +224,8 @@ export interface SessionState {
   prompt_project?: string;
   /** Project whose subscription (subscriber = session id) exists server-side. */
   subscribed_project_id?: number;
+  /** Name that subscription was bound under, when known, so a later project change can rebind. */
+  subscribed_project_name?: string;
   /** True when the hook itself created the subscription (API-key mode) and must release it. */
   subscribed_by_hook?: boolean;
   /** Server predates the subscription tools; stop trying for this session. */
@@ -265,6 +287,8 @@ export function isMutatingBash(command: unknown): boolean {
   const cmd = typeof command === 'string' ? command.trim() : '';
   if (!cmd) return false;
   if (/[;|&<>`$\n]/.test(cmd) || /--output\b/.test(cmd)) return true;
+  // find can delete, run commands, or write files through its own actions.
+  if (/^find\b/.test(cmd) && /\s-(delete|exec|execdir|ok|okdir|fprint0?|fprintf|fls)\b/.test(cmd)) return true;
   return !READ_ONLY_CMD.test(cmd);
 }
 
@@ -552,6 +576,38 @@ export interface SubscriptionEvent {
   kind?: string;
   title?: string;
   actor?: string;
+}
+
+/**
+ * Own-write ids whose actor=self events a poll has now delivered. Since
+ * actor=self is account-level, an id stays filtered only until its own
+ * events have been consumed; a later self event for it is another session of
+ * this account and must show. Ids retire on first sight, even from a
+ * truncated page (has_more): a trailing event of the same write on the next
+ * page then shows once as another session, which is bounded, whereas holding
+ * the id until the page that never repeats it would filter it forever.
+ */
+export function consumedOwnIds(data: unknown, ownIds: number[]): number[] {
+  const results = (data as { results?: unknown } | undefined)?.results;
+  if (!Array.isArray(results)) return [];
+  const own = new Set(ownIds);
+  const seen = new Set<number>();
+  for (const item of results as Array<{ events?: SubscriptionEvent[] }>) {
+    if (!item || typeof item !== 'object') continue;
+    for (const ev of item.events ?? []) {
+      if (ev && typeof ev === 'object' && typeof ev.record_id === 'number' && ev.actor === 'self' && own.has(ev.record_id)) seen.add(ev.record_id);
+    }
+  }
+  return [...seen];
+}
+
+/** Drop delivered own-write ids from the session state (see consumedOwnIds). */
+export function retireOwnIds(key: string, ids: number[]): void {
+  if (ids.length === 0) return;
+  const gone = new Set(ids);
+  updateState(key, (st) => {
+    st.written_ids = (st.written_ids ?? []).filter((id) => !gone.has(id));
+  });
 }
 
 /**

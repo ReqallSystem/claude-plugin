@@ -579,11 +579,11 @@ test('REQALL_MACHINE_NAME overrides the hostname segment', () => {
 test('post-tool ignores read-only Bash commands but counts mutating ones', () => {
   const data = dataDir();
   const env = { CLAUDE_PLUGIN_DATA: data, REQALL_DOC_INTERVAL_MIN: '0', REQALL_PERSIST_INTERVAL_MIN: '0', REQALL_IDLE_PERSIST_INTERVAL_MIN: '0' };
-  for (const command of ['git status', 'ls -la src', 'cat package.json', 'rg -n foo src/', 'git log --oneline -5']) {
+  for (const command of ['git status', 'ls -la src', 'cat package.json', 'rg -n foo src/', 'git log --oneline -5', 'find . -name "*.ts" -newer package.json']) {
     assert.equal(runHook('post-tool', { session_id: 'b1', tool_name: 'Bash', tool_input: { command } }, env), null, command);
   }
   assert.equal(runHook('stop', { session_id: 'b1', stop_hook_active: false }, env), null, 'read-only shell is not activity');
-  for (const command of ['npm run build', 'git commit -m x', 'cat a > b', 'ls && rm -rf dist', 'echo $(date) | tee log']) {
+  for (const command of ['npm run build', 'git commit -m x', 'cat a > b', 'ls && rm -rf dist', 'echo $(date) | tee log', 'find . -name "*.tmp" -delete', 'find src -type f -exec chmod +x {} +']) {
     assert.notEqual(runHook('post-tool', { session_id: 'b2', tool_name: 'Bash', tool_input: { command } }, env), null, command);
   }
   assert.equal(runHook('stop', { session_id: 'b2', stop_hook_active: false }, env).decision, 'block');
@@ -648,6 +648,12 @@ test('user-prompt-submit remembers a labelled project_name= selection for non-re
   // Git origin still wins over the prompt.
   runHook('user-prompt-submit', { session_id: 'pp3', cwd: root, prompt: 'project_name=acme/widgets: refactor the hooks' }, env);
   assert.match(runHook('session-start', { session_id: 'pp3', cwd: root }, env).hookSpecificOutput.additionalContext, /ReqallSystem\/claude-plugin/);
+  // Sentence punctuation after an unquoted value is prose, not part of the name.
+  for (const [i, prompt] of ['project_name=acme/widgets: refactor the hooks', 'use project_name=acme/widgets. Then add tests', 'in project: acme/widgets, add tests'].entries()) {
+    const sid = `pp4-${i}`;
+    runHook('user-prompt-submit', { session_id: sid, cwd: dir, prompt }, env);
+    assert.match(runHook('session-start', { session_id: sid, cwd: dir }, env).hookSpecificOutput.additionalContext, /project_name=acme\/widgets: \(1\)/, prompt);
+  }
 });
 
 test('session-end removes every state file for the session and leaves other sessions alone', () => {
@@ -728,6 +734,16 @@ test('API-key mode: the hook binds, subscribes once, polls each prompt, and inje
     assert.match(ctx, /#7 \[todo\] \(you, another session\): Other session of mine/);
     assert.doesNotMatch(ctx, /My own write/);
 
+    // #5's own events were delivered, so a later self event for it is another session of this account.
+    events = [ev('record.updated', 5, { actor: 'self', title: 'Edited from another session' })];
+    const third = await runHookAsync('user-prompt-submit', { session_id: 'k1', prompt: 'thanks, continue' }, env);
+    assert.match(third.hookSpecificOutput.additionalContext, /#5 \[todo\] \(you, another session\): Edited from another session/);
+    // Writing it again re-arms the filter for that write.
+    runHook('reqall-track', { session_id: 'k1', tool_name: 'mcp__Reqall__upsert_record', tool_input: { id: 5 }, tool_response: { ok: true, data: { record: { id: 5, kind: 'todo', title: 'Mine' } } } }, env);
+    events = [ev('record.updated', 5, { actor: 'self', title: 'My own edit' })];
+    const fourth = await runHookAsync('user-prompt-submit', { session_id: 'k1', prompt: 'thanks, continue' }, env);
+    assert.equal(fourth, null, 'own edit filtered again: quiet poll, short prompt, nothing to inject');
+
     calls.length = 0;
     await runHookAsync('session-end', { session_id: 'k1', reason: 'exit' }, env);
     assert.deepEqual(calls.map((c) => c.name), ['unsubscribe_project'], 'hook-owned cursor released at session end');
@@ -771,4 +787,101 @@ test('REQALL_POLL_INTERVAL_MIN throttles the poll instruction', () => {
   runHook('reqall-track', { session_id: 't1', tool_name: 'mcp__Reqall__subscribe_project', tool_input: { project_id: 7 }, tool_response: { ok: true, data: { subscription: { project_id: 7 } } } }, env);
   assert.match(runHook('user-prompt-submit', { session_id: 't1', prompt: 'hi' }, env).hookSpecificOutput.additionalContext, /poll_subscriptions/);
   assert.equal(runHook('user-prompt-submit', { session_id: 't1', prompt: 'hi' }, env), null, 'throttled');
+});
+
+test('reqall-track counts an upsert_link repair toward reconciliation, so the verification pass clears the intent', () => {
+  const data = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_PERSIST_INTERVAL_MIN: '0', REQALL_IDLE_PERSIST_INTERVAL_MIN: '0' };
+  runHook('reqall-track', { session_id: 'l1', tool_name: 'mcp__plugin_reqall_reqall__upsert_record', tool_input: { kind: 'spec', title: 'SPEC: Intent flow' }, tool_response: [{ type: 'text', text: specResponse }] }, env);
+  assert.equal(runHook('stop', { session_id: 'l1', stop_hook_active: false }, env).decision, 'block');
+  // The inline link failed; persist repaired it with upsert_link as the skill says.
+  runHook(
+    'reqall-track',
+    { session_id: 'l1', tool_name: 'mcp__plugin_reqall_reqall__upsert_record', tool_input: { kind: 'work', title: 'WORK: x', links: [{ target_id: 4695, relationship: 'implements' }] }, tool_response: { ok: true, data: { action: 'created', record: { id: 9003, kind: 'work', title: 'WORK: x' }, links: [{ target_id: 4695, relationship: 'implements', action: 'error', error: 'timeout' }] } } },
+    env,
+  );
+  runHook(
+    'reqall-track',
+    { session_id: 'l1', tool_name: 'mcp__plugin_reqall_reqall__upsert_link', tool_input: { source_id: 9003, source_table: 'records', target_id: 4695, target_table: 'records', relationship: 'implements' }, tool_response: [{ type: 'text', text: JSON.stringify({ ok: true, data: { action: 'created', link: { id: 77, source_id: 9003, source_table: 'records', target_id: 4695, target_table: 'records', relationship: 'implements' } } }) }] },
+    env,
+  );
+  assert.equal(runHook('stop', { session_id: 'l1', stop_hook_active: true }, env), null, 'repaired link covers the intent: no re-block');
+  // A failed or unrelated link does not.
+  runHook('reqall-track', { session_id: 'l2', tool_name: 'mcp__Reqall__upsert_record', tool_input: { kind: 'spec', title: 'SPEC: Intent flow' }, tool_response: [{ type: 'text', text: specResponse }] }, env);
+  assert.equal(runHook('stop', { session_id: 'l2', stop_hook_active: false }, env).decision, 'block');
+  runHook('reqall-track', { session_id: 'l2', tool_name: 'mcp__Reqall__upsert_link', tool_input: { source_id: 1, source_table: 'records', target_id: 4695, target_table: 'records', relationship: 'implements' }, tool_response: { ok: false, error: 'forbidden' } }, env);
+  runHook('reqall-track', { session_id: 'l2', tool_name: 'mcp__Reqall__upsert_link', tool_input: { source_id: 1, source_table: 'records', target_id: 4695, target_table: 'records', relationship: 'related' }, tool_response: { ok: true, data: { action: 'created', link: { id: 78, source_id: 1, target_id: 4695, relationship: 'related' } } } }, env);
+  // A project whose id collides with the intent's, or a self-link, is not coverage either.
+  runHook('reqall-track', { session_id: 'l2', tool_name: 'mcp__Reqall__upsert_link', tool_input: { source_id: 1, source_table: 'records', target_id: 4695, target_table: 'projects', relationship: 'implements' }, tool_response: { ok: true, data: { action: 'created', link: { id: 79, source_id: 1, target_id: 4695, target_table: 'projects', relationship: 'implements' } } } }, env);
+  runHook('reqall-track', { session_id: 'l2', tool_name: 'mcp__Reqall__upsert_link', tool_input: { source_id: 4695, source_table: 'records', target_id: 4695, target_table: 'records', relationship: 'implements' }, tool_response: { ok: true, data: { action: 'created', link: { id: 80, source_id: 4695, target_id: 4695, relationship: 'implements' } } } }, env);
+  assert.equal(runHook('stop', { session_id: 'l2', stop_hook_active: true }, env).decision, 'block', 'failed, non-covering, cross-table, or self links leave the intent owed');
+});
+
+test('reqall-track binds the subscription name whichever tracker lands second (the hook runs async)', () => {
+  const data = dataDir();
+  const dir = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_PROJECT_NAME: '', REQALL_INTENT_INTERVAL_MIN: '0', REQALL_API_KEY: '' };
+  runHook('user-prompt-submit', { session_id: 'ao1', cwd: dir, prompt: 'work in project_name=acme/one please, add the parser' }, env);
+  // subscribe_project's tracker finishes before upsert_project's.
+  runHook('reqall-track', { session_id: 'ao1', cwd: dir, tool_name: 'mcp__Reqall__subscribe_project', tool_input: { project_id: 11, subscriber: 'ao1' }, tool_response: { ok: true, data: { subscription: { project_id: 11 } } } }, env);
+  runHook('reqall-track', { session_id: 'ao1', cwd: dir, tool_name: 'mcp__Reqall__upsert_project', tool_input: { name: 'acme/one' }, tool_response: { ok: true, data: { project: { id: 11, name: 'acme/one' } } } }, env);
+  const ctx = runHook('user-prompt-submit', { session_id: 'ao1', cwd: dir, prompt: 'now switch to project_name=acme/two and add the lexer' }, env).hookSpecificOutput.additionalContext;
+  assert.match(ctx, /unsubscribe_project with project_id=11/, 'binding name known despite the reversed order');
+  assert.doesNotMatch(ctx, /poll_subscriptions/);
+});
+
+test('OAuth mode: a later project_name= selection rebinds the subscription instead of polling the old project', () => {
+  const data = dataDir();
+  const dir = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_PROJECT_NAME: '', REQALL_INTENT_INTERVAL_MIN: '0', REQALL_API_KEY: '' };
+  runHook('user-prompt-submit', { session_id: 'rb1', cwd: dir, prompt: 'work in project_name=acme/one please, add the parser' }, env);
+  runHook('reqall-track', { session_id: 'rb1', cwd: dir, tool_name: 'mcp__Reqall__upsert_project', tool_input: { name: 'acme/one' }, tool_response: { ok: true, data: { action: 'created_or_found', project: { id: 11, name: 'acme/one' } } } }, env);
+  runHook('reqall-track', { session_id: 'rb1', cwd: dir, tool_name: 'mcp__Reqall__subscribe_project', tool_input: { project_id: 11, subscriber: 'rb1' }, tool_response: { ok: true, data: { action: 'created', subscription: { project_id: 11, subscriber: 'rb1' } } } }, env);
+  let ctx = runHook('user-prompt-submit', { session_id: 'rb1', cwd: dir, prompt: 'ok' }, env).hookSpecificOutput.additionalContext;
+  assert.match(ctx, /poll_subscriptions .*project_id=11/);
+  // Routing a preference to .user is not a project change.
+  runHook('reqall-track', { session_id: 'rb1', cwd: dir, tool_name: 'mcp__Reqall__upsert_project', tool_input: { name: '.user' }, tool_response: { ok: true, data: { project: { id: 99, name: '.user' } } } }, env);
+  ctx = runHook('user-prompt-submit', { session_id: 'rb1', cwd: dir, prompt: 'ok' }, env).hookSpecificOutput.additionalContext;
+  assert.match(ctx, /poll_subscriptions .*project_id=11/, 'still bound to the selected project');
+  // The selection changes: rebind, do not poll the stale binding.
+  ctx = runHook('user-prompt-submit', { session_id: 'rb1', cwd: dir, prompt: 'now switch to project_name=acme/two and add the lexer' }, env).hookSpecificOutput.additionalContext;
+  assert.doesNotMatch(ctx, /poll_subscriptions/);
+  assert.match(ctx, /unsubscribe_project with project_id=11 and subscriber="rb1"/);
+  assert.match(ctx, /subscribe_project with the new project_id/);
+  assert.match(ctx, /name="acme\/two"/);
+  // Compaction sees the stale binding too, instead of assuming it is current.
+  const compact = runHook('session-start', { session_id: 'rb1', cwd: dir, source: 'compact' }, env).hookSpecificOutput.additionalContext;
+  assert.match(compact, /project_name=acme\/two/);
+  assert.match(compact, /unsubscribe_project with project_id=11/);
+  // Once the model rebinds, polling resumes on the new project.
+  runHook('reqall-track', { session_id: 'rb1', cwd: dir, tool_name: 'mcp__Reqall__upsert_project', tool_input: { name: 'acme/two' }, tool_response: { ok: true, data: { project: { id: 12, name: 'acme/two' } } } }, env);
+  runHook('reqall-track', { session_id: 'rb1', cwd: dir, tool_name: 'mcp__Reqall__subscribe_project', tool_input: { project_id: 12, subscriber: 'rb1' }, tool_response: { ok: true, data: { subscription: { project_id: 12 } } } }, env);
+  ctx = runHook('user-prompt-submit', { session_id: 'rb1', cwd: dir, prompt: 'ok' }, env).hookSpecificOutput.additionalContext;
+  assert.match(ctx, /poll_subscriptions .*project_id=12/);
+  assert.doesNotMatch(runHook('session-start', { session_id: 'rb1', cwd: dir, source: 'compact' }, env).hookSpecificOutput.additionalContext, /subscribe_project/);
+});
+
+test('OAuth mode: own-write ids are retired once the model\'s poll has delivered their self events', () => {
+  const data = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_INTENT_INTERVAL_MIN: '0', REQALL_API_KEY: '' };
+  runHook('reqall-track', { session_id: 'rt1', tool_name: 'mcp__Reqall__subscribe_project', tool_input: { project_id: 7 }, tool_response: { ok: true, data: { subscription: { project_id: 7 } } } }, env);
+  runHook('reqall-track', { session_id: 'rt1', tool_name: 'mcp__Reqall__upsert_record', tool_input: { kind: 'todo' }, tool_response: { ok: true, data: { record: { id: 555, kind: 'todo', title: 'T' } } } }, env);
+  runHook('reqall-track', { session_id: 'rt1', tool_name: 'mcp__Reqall__upsert_record', tool_input: { kind: 'todo' }, tool_response: { ok: true, data: { record: { id: 556, kind: 'todo', title: 'U' } } } }, env);
+  assert.match(runHook('user-prompt-submit', { session_id: 'rt1', prompt: 'ok' }, env).hookSpecificOutput.additionalContext, /#555, #556/);
+  runHook(
+    'reqall-track',
+    { session_id: 'rt1', tool_name: 'mcp__Reqall__poll_subscriptions', tool_input: { subscriber: 'rt1', project_id: 7 }, tool_response: [{ type: 'text', text: JSON.stringify({ ok: true, data: { results: [{ subscription: { project_id: 7 }, events: [{ action: 'record.created', record_id: 555, actor: 'self' }, { action: 'record.updated', record_id: 600, actor: 'other' }], has_more: false }] } }) }] },
+    env,
+  );
+  let ctx = runHook('user-prompt-submit', { session_id: 'rt1', prompt: 'ok' }, env).hookSpecificOutput.additionalContext;
+  assert.match(ctx, /#556/, 'undelivered own write still filtered');
+  assert.doesNotMatch(ctx, /#555/, 'delivered own write retired so a later same-account edit shows');
+  // A truncated page still retires what it delivered; the final page may never repeat the record.
+  runHook(
+    'reqall-track',
+    { session_id: 'rt1', tool_name: 'mcp__Reqall__poll_subscriptions', tool_input: { subscriber: 'rt1', project_id: 7 }, tool_response: { ok: true, data: { results: [{ subscription: { project_id: 7 }, events: [{ action: 'record.created', record_id: 556, actor: 'self' }], has_more: true }] } } },
+    env,
+  );
+  ctx = runHook('user-prompt-submit', { session_id: 'rt1', prompt: 'ok' }, env).hookSpecificOutput.additionalContext;
+  assert.doesNotMatch(ctx, /#556/, 'retired on first sight even with has_more');
 });
