@@ -18,7 +18,7 @@ allowed-tools:
 User invoked sleep → rewrite and delete are expected. Compression is the point.
 Knowledge = decisions, outcomes, constraints, IDs, contracts — not session prose.
 
-Ops (fixed names): `consolidate` · `split` · `compact` · `skip` · `crosslink`
+Ops (fixed names): `consolidate` · `split` · `compact` · `skip` · `crosslink` · `promote` · `discard`
 
 Rate-limited ~once per 24h per project. **Modest progress is success** — do not boil the ocean.
 
@@ -33,7 +33,12 @@ Rate-limited ~once per 24h per project. **Modest progress is success** — do no
 | Active/open; single topic, already clear | leave (no op) |
 | Cross-project pair; same concept, discovery-useful | **crosslink** |
 | Cross-project pair; superficial token overlap | omit |
+| `work_review`: a work log holding durable knowledge | **promote** → durable kind(s) (`info` / `arch` / `todo` / `issue`); the work log is deleted |
+| `work_review`: a work log with no durable knowledge | **discard** (deletes the work log) |
 | Candidate unclear / not obvious | **omit this pass** (not a full-run refuse) |
+
+`promote` / `discard` apply only to `kind: work`. Never emit `work` from
+consolidate or split.
 
 Prefer clear, concise records and useful links over perfect coverage. A long but appropriate record can wait for a later sleep.
 
@@ -41,19 +46,22 @@ Prefer clear, concise records and useful links over perfect coverage. A long but
 
 1. **Project** — arg → `REQALL_PROJECT_NAME` → git `org/repo` → `.machine/<hostname>/<os-user>` (hook output) → `reqall:upsert_project` → `project_id`.
 2. **Candidates** — `reqall:sleep_candidates` with `project_id`. If rate-limited, report next eligible time and stop.
-3. **Summary** — counts: consolidate clusters, compact/skip pool, split, crosslink. Empty → "Nothing to do — graph is healthy."
+3. **Summary** — counts: consolidate clusters, compact/skip pool, split, crosslink, work_review. Empty → "Nothing to do — graph is healthy."
 4. **Select ops** — decision table only. Prefer obvious wins; small batch is fine. Bodies: terse, non-redundant.
    - **consolidate** — `kind: "arch"`, `status: "resolved"`; best title; keep knowledge from all members; wording is disposable.
    - **compact** — same id; leaner form.
    - **split** — focused sub-records; kind/status fit each topic (usually match original).
    - **crosslink** — only when useful for discovery.
+   - **promote** — one or more durable records carrying the work log's decisions, outcomes, and constraints; drop the narrative.
+   - **discard** — nothing durable in the log.
 5. **Apply** — one `reqall:sleep_apply` with the batch. No per-op confirmation.
-6. **Report** — consolidated / compacted / split / crosslinked / skipped / errors. If candidates were capped: note to run again later.
+6. **Verify** — inspect every apply result for partial failures; do not retry the whole destructive batch after an ambiguous response.
+7. **Report** — consolidated / compacted / split / crosslinked / skipped / promoted / discarded / errors. If candidates were capped: note to run again later.
 
 ## Rules
 
 - Knowledge ≠ wording. Prose is disposable; durable facts are not.
-- **consolidate always deletes sources** (server). Do not keep originals.
+- **consolidate always deletes sources** (server). **promote** and **discard** delete the work log. Do not keep originals.
 - Do not ask whether rewrite/delete is OK — user ran sleep.
 - Unclear candidate → omit; do not invent merges or splits.
 - Safety (ownership, active dependents) is enforced by `sleep_apply` — do not re-check.

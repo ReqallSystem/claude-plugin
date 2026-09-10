@@ -9,12 +9,14 @@ allowed-tools:
   - mcp__plugin_reqall_reqall__get_record
   - mcp__plugin_reqall_reqall__upsert_record
   - mcp__plugin_reqall_reqall__upsert_link
+  - mcp__plugin_reqall_reqall__list_links
   - mcp__Reqall__upsert_project
   - mcp__Reqall__search
   - mcp__Reqall__list_records
   - mcp__Reqall__get_record
   - mcp__Reqall__upsert_record
   - mcp__Reqall__upsert_link
+  - mcp__Reqall__list_links
 ---
 
 # Persist Work
@@ -101,7 +103,10 @@ Prefix titles to aid scanning:
    written this session" (spec/arch records created by `reqall:intend` or
    an accepted plan). If it does not, but you know a spec/arch was written
    or agreed this session, treat it the same way. For each intent record:
-   - Call `reqall:get_record` if you need its acceptance criteria.
+   - Call `reqall:get_record` if you need its acceptance criteria. Do not
+     resolve intent whose acceptance criteria are unverified, and never
+     mark a spec resolved as a substitute for the `implements` link — the
+     Stop hook verifies the link, not the status.
    - **Fulfilled** by the session's work → the `work` record `implements`
      the intent record (inline `links` on its upsert, or
      `reqall:upsert_link`), and set the `work` record `status: "resolved"`.
@@ -128,9 +133,30 @@ Prefix titles to aid scanning:
    created/updated, links established, intent fulfilled or blocked.
 
 7. **Verify** — Call `reqall:list_records` with the `project_id` to
-   review the records just created or updated. Cross-check against the
-   work items identified in step 2. If anything was missed, create it
-   now.
+   review the records just created or updated, and `reqall:list_links` on
+   the work record when any inline link result was not `created` /
+   `existing`. Cross-check against the work items identified in step 2. If
+   anything was missed, create it now. The Stop hook re-blocks once when an
+   intent record it tracked has no `implements` / `blocks` link from an
+   outcome written this session.
+
+## Inline links and verification
+
+Pass `links` on `upsert_record` (at most 20). Each entry names `target_id`,
+`relationship`, and, when it matters, `target_table` (`records` or `projects`)
+and `direction` (`outgoing`: this record → target, the default; `incoming`:
+target → this record). Use `implements` for outcome → intent, `tests` for
+evidence → subject, `blocks` for blocker → blocked item, and `parent` /
+`related` only when justified.
+
+Check the record result **and every per-link result**: `action: created` or
+`existing` succeeds; `error`, a missing entry, or a count mismatch is partial
+persistence even though the record saved. Repair a missing link with
+`reqall:upsert_link` (reverse the endpoints for an incoming link) — never
+recreate a record that already saved. When in doubt, read back the record
+with `reqall:get_record` and its edges with `reqall:list_links` before
+reporting success. Report remaining failures rather than treating a
+successful transport response as persistence.
 
 ## When to Skip
 

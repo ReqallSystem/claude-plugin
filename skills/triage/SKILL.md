@@ -9,11 +9,13 @@ allowed-tools:
   - mcp__plugin_reqall_reqall__list_records
   - mcp__plugin_reqall_reqall__upsert_record
   - mcp__plugin_reqall_reqall__upsert_link
+  - mcp__plugin_reqall_reqall__get_record
   - mcp__Reqall__upsert_project
   - mcp__Reqall__search
   - mcp__Reqall__list_records
   - mcp__Reqall__upsert_record
   - mcp__Reqall__upsert_link
+  - mcp__Reqall__get_record
 ---
 
 # Triage Incoming Issue
@@ -106,8 +108,8 @@ Reqall record with priority.
    - Show them to the user with title and body summary
    - Ask: "Is this the same issue, related, or a new issue?"
    - If duplicate: update the existing record with new details via
-     `reqall:upsert_record` (pass its `record_id`), add a note about
-     the additional report, and stop
+     `reqall:upsert_record` (pass its `id`), add a note about the
+     additional report, and stop
    - If related: proceed to create a new record and link it in step 8
 
 6. **Determine priority** -- Assess priority using the Priority Scale
@@ -126,6 +128,7 @@ Reqall record with priority.
    - `status`: `open`
    - `title`: `{PREFIX} {PRIORITY}: {concise title}`
      Example: `BUG: P1: Login fails silently on Safari 18`
+   - `links`: the relationships from step 8, inline
    - `body`: a structured summary including:
      - **Category:** the classification
      - **Priority:** level and justification
@@ -133,8 +136,12 @@ Reqall record with priority.
      - **Details:** all gathered structured details
      - **Reporter context:** any relevant user/session context
 
-8. **Create links** -- If step 5 found related (non-duplicate) records,
-   call `reqall:upsert_link` for each:
+8. **Link** -- If step 5 found related (non-duplicate) records, pass them
+   as inline `links` on the `reqall:upsert_record` call in step 7 (one call
+   creates the record and its edges); use `reqall:upsert_link` only when the
+   schema has no `links` field. Check every link result: `created` /
+   `existing` succeed, `error` means the record saved but the edge did not
+   -- repair with `reqall:upsert_link`, never recreate the record.
    - Bug that may be caused by an arch decision: `related`
    - Feature request that extends an existing spec: `related`
    - Bug that blocks a todo: `blocks`

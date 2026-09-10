@@ -59,11 +59,11 @@
         ]
       },
       {
-        "matcher": "mcp__plugin_reqall_reqall__upsert_record|mcp__Reqall__upsert_record|mcp__plugin_reqall_reqall__get_record|mcp__Reqall__get_record",
+        "matcher": "mcp__plugin_reqall_reqall__(upsert_record|get_record|upsert_project|subscribe_project)|mcp__Reqall__(upsert_record|get_record|upsert_project|subscribe_project)",
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/src/hooks/intent-track.js\"",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/src/hooks/reqall-track.js\"",
             "timeout": 15,
             "async": true
           }
@@ -102,6 +102,17 @@
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/src/hooks/pre-compact.js\"",
             "timeout": 15,
             "statusMessage": "Persisting to Reqall before compaction"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/src/hooks/session-end.js\"",
+            "timeout": 15
           }
         ]
       }
