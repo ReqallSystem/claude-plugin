@@ -59,7 +59,7 @@
         ]
       },
       {
-        "matcher": "mcp__plugin_reqall_reqall__(upsert_record|get_record|upsert_project|subscribe_project)|mcp__Reqall__(upsert_record|get_record|upsert_project|subscribe_project)",
+        "matcher": "mcp__plugin_reqall_reqall__(upsert_record|get_record|upsert_link|upsert_project|subscribe_project|poll_subscriptions)|mcp__Reqall__(upsert_record|get_record|upsert_link|upsert_project|subscribe_project|poll_subscriptions)",
         "hooks": [
           {
             "type": "command",

@@ -51,8 +51,24 @@ export function extractProjectHint(text) {
     const m = PROJECT_KV.exec(text);
     if (!m)
         return undefined;
-    const value = (m[1] ?? m[2] ?? m[3] ?? m[4] ?? '').trim();
+    // An unquoted value in prose can carry sentence punctuation
+    // (`project_name=acme/widgets: refactor …`); quoted forms are taken as-is.
+    const value = (m[1] ?? m[2] ?? m[3] ?? (m[4] ?? '').replace(/[.,:;!?)\]]+$/, '')).trim();
     return value || undefined;
+}
+/** Project names are unique case-insensitively server-side; compare the same way. */
+export function sameProject(a, b) {
+    return a !== undefined && b !== undefined && a.toLowerCase() === b.toLowerCase();
+}
+/**
+ * Whether the session's subscription (if any) was bound under a different
+ * project than the one now resolved — a later `project_name=` selection in a
+ * non-repo session, for instance. Unknown binding names count as current.
+ */
+export function subscriptionStale(st, name) {
+    return (st.subscribed_project_id !== undefined &&
+        st.subscribed_project_name !== undefined &&
+        !sameProject(st.subscribed_project_name, name));
 }
 /**
  * REQALL_PROJECT_NAME > git remote org/repo > labelled `project_name=` from
@@ -209,6 +225,9 @@ export function isMutatingBash(command) {
     if (!cmd)
         return false;
     if (/[;|&<>`$\n]/.test(cmd) || /--output\b/.test(cmd))
+        return true;
+    // find can delete, run commands, or write files through its own actions.
+    if (/^find\b/.test(cmd) && /\s-(delete|exec|execdir|ok|okdir|fprint0?|fprintf|fls)\b/.test(cmd))
         return true;
     return !READ_ONLY_CMD.test(cmd);
 }
@@ -458,6 +477,38 @@ export async function mcpCall(tool, args, timeoutMs = 6000) {
     finally {
         clearTimeout(timer);
     }
+}
+/**
+ * Own-write ids whose actor=self events a poll has now delivered. Since
+ * actor=self is account-level, an id stays filtered only until its own
+ * events have been consumed; a later self event for it is another session of
+ * this account and must show. Ids are not retired from a truncated page
+ * (has_more) because the rest of the same write may still be pending.
+ */
+export function consumedOwnIds(data, ownIds) {
+    const results = data?.results;
+    if (!Array.isArray(results))
+        return [];
+    const own = new Set(ownIds);
+    const seen = new Set();
+    for (const item of results) {
+        if (!item || typeof item !== 'object' || item.has_more)
+            continue;
+        for (const ev of item.events ?? []) {
+            if (ev && typeof ev === 'object' && typeof ev.record_id === 'number' && ev.actor === 'self' && own.has(ev.record_id))
+                seen.add(ev.record_id);
+        }
+    }
+    return [...seen];
+}
+/** Drop delivered own-write ids from the session state (see consumedOwnIds). */
+export function retireOwnIds(key, ids) {
+    if (ids.length === 0)
+        return;
+    const gone = new Set(ids);
+    updateState(key, (st) => {
+        st.written_ids = (st.written_ids ?? []).filter((id) => !gone.has(id));
+    });
 }
 /**
  * Render a poll_subscriptions result for injection, or '' when quiet. Events

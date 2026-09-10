@@ -23,6 +23,14 @@ export declare function sessionKey(input: HookInput): string;
  */
 export declare function machineProjectName(): string;
 export declare function extractProjectHint(text: string | undefined): string | undefined;
+/** Project names are unique case-insensitively server-side; compare the same way. */
+export declare function sameProject(a: string | undefined, b: string | undefined): boolean;
+/**
+ * Whether the session's subscription (if any) was bound under a different
+ * project than the one now resolved — a later `project_name=` selection in a
+ * non-repo session, for instance. Unknown binding names count as current.
+ */
+export declare function subscriptionStale(st: SessionState, name: string): boolean;
 /**
  * REQALL_PROJECT_NAME > git remote org/repo > labelled `project_name=` from
  * a prompt this session (see UserPromptSubmit) > machine project. Never the
@@ -56,6 +64,8 @@ export interface SessionState {
     prompt_project?: string;
     /** Project whose subscription (subscriber = session id) exists server-side. */
     subscribed_project_id?: number;
+    /** Name that subscription was bound under, when known, so a later project change can rebind. */
+    subscribed_project_name?: string;
     /** True when the hook itself created the subscription (API-key mode) and must release it. */
     subscribed_by_hook?: boolean;
     /** Server predates the subscription tools; stop trying for this session. */
@@ -146,6 +156,16 @@ export interface SubscriptionEvent {
     title?: string;
     actor?: string;
 }
+/**
+ * Own-write ids whose actor=self events a poll has now delivered. Since
+ * actor=self is account-level, an id stays filtered only until its own
+ * events have been consumed; a later self event for it is another session of
+ * this account and must show. Ids are not retired from a truncated page
+ * (has_more) because the rest of the same write may still be pending.
+ */
+export declare function consumedOwnIds(data: unknown, ownIds: number[]): number[];
+/** Drop delivered own-write ids from the session state (see consumedOwnIds). */
+export declare function retireOwnIds(key: string, ids: number[]): void;
 /**
  * Render a poll_subscriptions result for injection, or '' when quiet. Events
  * for records this session wrote are dropped; other sessions of the same
