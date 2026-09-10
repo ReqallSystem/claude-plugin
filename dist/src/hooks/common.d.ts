@@ -160,8 +160,10 @@ export interface SubscriptionEvent {
  * Own-write ids whose actor=self events a poll has now delivered. Since
  * actor=self is account-level, an id stays filtered only until its own
  * events have been consumed; a later self event for it is another session of
- * this account and must show. Ids are not retired from a truncated page
- * (has_more) because the rest of the same write may still be pending.
+ * this account and must show. Ids retire on first sight, even from a
+ * truncated page (has_more): a trailing event of the same write on the next
+ * page then shows once as another session, which is bounded, whereas holding
+ * the id until the page that never repeats it would filter it forever.
  */
 export declare function consumedOwnIds(data: unknown, ownIds: number[]): number[];
 /** Drop delivered own-write ids from the session state (see consumedOwnIds). */

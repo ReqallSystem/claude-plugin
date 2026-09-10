@@ -482,8 +482,10 @@ export async function mcpCall(tool, args, timeoutMs = 6000) {
  * Own-write ids whose actor=self events a poll has now delivered. Since
  * actor=self is account-level, an id stays filtered only until its own
  * events have been consumed; a later self event for it is another session of
- * this account and must show. Ids are not retired from a truncated page
- * (has_more) because the rest of the same write may still be pending.
+ * this account and must show. Ids retire on first sight, even from a
+ * truncated page (has_more): a trailing event of the same write on the next
+ * page then shows once as another session, which is bounded, whereas holding
+ * the id until the page that never repeats it would filter it forever.
  */
 export function consumedOwnIds(data, ownIds) {
     const results = data?.results;
@@ -492,7 +494,7 @@ export function consumedOwnIds(data, ownIds) {
     const own = new Set(ownIds);
     const seen = new Set();
     for (const item of results) {
-        if (!item || typeof item !== 'object' || item.has_more)
+        if (!item || typeof item !== 'object')
             continue;
         for (const ev of item.events ?? []) {
             if (ev && typeof ev === 'object' && typeof ev.record_id === 'number' && ev.actor === 'self' && own.has(ev.record_id))

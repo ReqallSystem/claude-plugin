@@ -14,10 +14,11 @@
  * - upsert_link that implements/blocks a tracked intent (the persist skill's
  *   repair for a failed inline link) reconciles it the same way.
  * - upsert_project → project_id / project_name for later polls.
- * - subscribe_project → subscribed_project_id (and the name it was bound
- *   under, when the id matches the last upserted project), so
- *   UserPromptSubmit knows the model already subscribed and can ask it to
- *   poll, or to rebind after the session's project changes.
+ * - subscribe_project → subscribed_project_id, so UserPromptSubmit knows the
+ *   model already subscribed and can ask it to poll, or to rebind after the
+ *   session's project changes. The name the subscription was bound under is
+ *   filled by whichever of the two trackers lands second (this hook runs
+ *   async, so upsert_project's may finish after subscribe_project's).
  * - poll_subscriptions by the model → own-write ids whose actor=self events
  *   were delivered are retired, so a later same-account edit still shows.
  *
@@ -97,6 +98,8 @@ if (match) {
                 st.project_id = id;
                 if (name)
                     st.project_name = name;
+                if (name && st.subscribed_project_id === id)
+                    st.subscribed_project_name = name;
             });
         }
     }
@@ -121,10 +124,14 @@ if (match) {
     }
     else if (op === 'upsert_link' && !failed) {
         // A repaired link is as good as an inline one for reconciliation; the
-        // response carries the link, else trust the input on success.
+        // response carries the link, else trust the input on success. Only a
+        // record-to-record link can cover an intent (a project id can collide
+        // numerically), and a record cannot cover itself.
         const rel = toolInput.relationship;
+        const isRecords = (t) => t === undefined || t === 'records';
+        const wellFormed = isRecords(toolInput.source_table) && isRecords(toolInput.target_table) && toolInput.source_id !== toolInput.target_id;
         const fromInput = typeof toolInput.target_id === 'number' && (rel === 'implements' || rel === 'blocks') ? [toolInput.target_id] : [];
-        const targets = found.linked.length > 0 ? found.linked : fromInput;
+        const targets = wellFormed ? (found.linked.length > 0 ? found.linked : fromInput) : [];
         const intentIds = new Set(readIntents(key).map((i) => i.id));
         const covered = targets.filter((t) => intentIds.has(t));
         if (covered.length > 0) {

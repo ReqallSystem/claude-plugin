@@ -811,7 +811,23 @@ test('reqall-track counts an upsert_link repair toward reconciliation, so the ve
   assert.equal(runHook('stop', { session_id: 'l2', stop_hook_active: false }, env).decision, 'block');
   runHook('reqall-track', { session_id: 'l2', tool_name: 'mcp__Reqall__upsert_link', tool_input: { source_id: 1, source_table: 'records', target_id: 4695, target_table: 'records', relationship: 'implements' }, tool_response: { ok: false, error: 'forbidden' } }, env);
   runHook('reqall-track', { session_id: 'l2', tool_name: 'mcp__Reqall__upsert_link', tool_input: { source_id: 1, source_table: 'records', target_id: 4695, target_table: 'records', relationship: 'related' }, tool_response: { ok: true, data: { action: 'created', link: { id: 78, source_id: 1, target_id: 4695, relationship: 'related' } } } }, env);
-  assert.equal(runHook('stop', { session_id: 'l2', stop_hook_active: true }, env).decision, 'block', 'failed or non-covering links leave the intent owed');
+  // A project whose id collides with the intent's, or a self-link, is not coverage either.
+  runHook('reqall-track', { session_id: 'l2', tool_name: 'mcp__Reqall__upsert_link', tool_input: { source_id: 1, source_table: 'records', target_id: 4695, target_table: 'projects', relationship: 'implements' }, tool_response: { ok: true, data: { action: 'created', link: { id: 79, source_id: 1, target_id: 4695, target_table: 'projects', relationship: 'implements' } } } }, env);
+  runHook('reqall-track', { session_id: 'l2', tool_name: 'mcp__Reqall__upsert_link', tool_input: { source_id: 4695, source_table: 'records', target_id: 4695, target_table: 'records', relationship: 'implements' }, tool_response: { ok: true, data: { action: 'created', link: { id: 80, source_id: 4695, target_id: 4695, relationship: 'implements' } } } }, env);
+  assert.equal(runHook('stop', { session_id: 'l2', stop_hook_active: true }, env).decision, 'block', 'failed, non-covering, cross-table, or self links leave the intent owed');
+});
+
+test('reqall-track binds the subscription name whichever tracker lands second (the hook runs async)', () => {
+  const data = dataDir();
+  const dir = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_PROJECT_NAME: '', REQALL_INTENT_INTERVAL_MIN: '0', REQALL_API_KEY: '' };
+  runHook('user-prompt-submit', { session_id: 'ao1', cwd: dir, prompt: 'work in project_name=acme/one please, add the parser' }, env);
+  // subscribe_project's tracker finishes before upsert_project's.
+  runHook('reqall-track', { session_id: 'ao1', cwd: dir, tool_name: 'mcp__Reqall__subscribe_project', tool_input: { project_id: 11, subscriber: 'ao1' }, tool_response: { ok: true, data: { subscription: { project_id: 11 } } } }, env);
+  runHook('reqall-track', { session_id: 'ao1', cwd: dir, tool_name: 'mcp__Reqall__upsert_project', tool_input: { name: 'acme/one' }, tool_response: { ok: true, data: { project: { id: 11, name: 'acme/one' } } } }, env);
+  const ctx = runHook('user-prompt-submit', { session_id: 'ao1', cwd: dir, prompt: 'now switch to project_name=acme/two and add the lexer' }, env).hookSpecificOutput.additionalContext;
+  assert.match(ctx, /unsubscribe_project with project_id=11/, 'binding name known despite the reversed order');
+  assert.doesNotMatch(ctx, /poll_subscriptions/);
 });
 
 test('OAuth mode: a later project_name= selection rebinds the subscription instead of polling the old project', () => {
@@ -857,7 +873,15 @@ test('OAuth mode: own-write ids are retired once the model\'s poll has delivered
     { session_id: 'rt1', tool_name: 'mcp__Reqall__poll_subscriptions', tool_input: { subscriber: 'rt1', project_id: 7 }, tool_response: [{ type: 'text', text: JSON.stringify({ ok: true, data: { results: [{ subscription: { project_id: 7 }, events: [{ action: 'record.created', record_id: 555, actor: 'self' }, { action: 'record.updated', record_id: 600, actor: 'other' }], has_more: false }] } }) }] },
     env,
   );
-  const ctx = runHook('user-prompt-submit', { session_id: 'rt1', prompt: 'ok' }, env).hookSpecificOutput.additionalContext;
+  let ctx = runHook('user-prompt-submit', { session_id: 'rt1', prompt: 'ok' }, env).hookSpecificOutput.additionalContext;
   assert.match(ctx, /#556/, 'undelivered own write still filtered');
   assert.doesNotMatch(ctx, /#555/, 'delivered own write retired so a later same-account edit shows');
+  // A truncated page still retires what it delivered; the final page may never repeat the record.
+  runHook(
+    'reqall-track',
+    { session_id: 'rt1', tool_name: 'mcp__Reqall__poll_subscriptions', tool_input: { subscriber: 'rt1', project_id: 7 }, tool_response: { ok: true, data: { results: [{ subscription: { project_id: 7 }, events: [{ action: 'record.created', record_id: 556, actor: 'self' }], has_more: true }] } } },
+    env,
+  );
+  ctx = runHook('user-prompt-submit', { session_id: 'rt1', prompt: 'ok' }, env).hookSpecificOutput.additionalContext;
+  assert.doesNotMatch(ctx, /#556/, 'retired on first sight even with has_more');
 });
