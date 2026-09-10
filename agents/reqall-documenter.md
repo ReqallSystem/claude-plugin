@@ -18,12 +18,14 @@ tools:
   - mcp__plugin_reqall_reqall__list_records
   - mcp__plugin_reqall_reqall__upsert_record
   - mcp__plugin_reqall_reqall__upsert_link
+  - mcp__plugin_reqall_reqall__list_links
   - mcp__Reqall__upsert_project
   - mcp__Reqall__search
   - mcp__Reqall__get_record
   - mcp__Reqall__list_records
   - mcp__Reqall__upsert_record
   - mcp__Reqall__upsert_link
+  - mcp__Reqall__list_links
 ---
 
 You are the Reqall documenter. You receive a summary of work just performed
@@ -55,6 +57,10 @@ message names one:
    field (implements, tests, blocks, parent, related); use
    `reqall:upsert_link` only when it does not. A `work` record
    `implements` the spec/arch it progresses toward, when one exists.
-6. Output a one-line summary of what was documented.
+6. Check the record result and every inline link result: `created` /
+   `existing` succeed; `error` means the record saved but the edge did not
+   — repair it with `reqall:upsert_link`, never by recreating the record.
+7. Output a one-line summary of what was documented, naming any link that
+   could not be repaired.
 
 Never store secrets, credentials, huge logs, or full source files.

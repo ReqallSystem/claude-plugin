@@ -8,10 +8,14 @@ allowed-tools:
   - mcp__plugin_reqall_reqall__search
   - mcp__plugin_reqall_reqall__upsert_record
   - mcp__plugin_reqall_reqall__upsert_link
+  - mcp__plugin_reqall_reqall__get_record
+  - mcp__plugin_reqall_reqall__list_links
   - mcp__Reqall__upsert_project
   - mcp__Reqall__search
   - mcp__Reqall__upsert_record
   - mcp__Reqall__upsert_link
+  - mcp__Reqall__get_record
+  - mcp__Reqall__list_links
 ---
 
 # Document Work Item
@@ -24,7 +28,9 @@ skill — it documents a single tool action rather than an entire session.
 
 Do **not** create a record if the tool use was:
 - A read-only operation (reading files, searching, listing)
-- A trivial or failed command (e.g. `ls`, `pwd`, a no-op edit)
+- A trivial or failed command (e.g. `ls`, `pwd`, a no-op edit) — a failed
+  command is not completed work, though a useful diagnosis of the failure
+  may still merit an `issue` or `info` record
 - A test run that produced no new findings
 - A formatting-only change with no semantic impact
 
@@ -99,5 +105,13 @@ Prefix titles to aid scanning:
    - A `work` record `implements` the spec/arch it is progressing toward
      (intent recorded by `reqall:intend`), when one exists
 
-6. **Summarize** — Output a one-line summary of what was documented
-   (or "Nothing to document." if skipped).
+6. **Check results** — the record result and every inline link result
+   must be `created` / `existing`. An `error` link means partial
+   persistence: repair with `reqall:upsert_link` between the existing
+   records; never recreate the record. Confirm with `reqall:list_links`
+   when a result was ambiguous.
+
+7. **Summarize** — Output a one-line summary of what was documented,
+   naming any link that could not be repaired (or "Nothing to document."
+   if skipped). Documenting one item does not reconcile the session: the
+   Stop hook still drives `reqall:persist`.

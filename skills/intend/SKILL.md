@@ -10,6 +10,7 @@ allowed-tools:
   - mcp__plugin_reqall_reqall__impact
   - mcp__plugin_reqall_reqall__upsert_record
   - mcp__plugin_reqall_reqall__upsert_link
+  - mcp__plugin_reqall_reqall__list_links
   - mcp__Reqall__upsert_project
   - mcp__Reqall__search
   - mcp__Reqall__get_record
@@ -17,6 +18,7 @@ allowed-tools:
   - mcp__Reqall__impact
   - mcp__Reqall__upsert_record
   - mcp__Reqall__upsert_link
+  - mcp__Reqall__list_links
 ---
 
 # Record Intent
@@ -84,7 +86,13 @@ spec inflation, which is worse than a missing record.
      existing record and link anything downstream that this work touches
      as `related`
 
-5. **Report in one line** — "Intent: #<id> <kind> <title> (created|updated|
+5. **Check the link results** — every inline link reports `created`,
+   `existing`, or `error`. An `error` is partial persistence: repair it
+   with `reqall:upsert_link` between the two existing records; do not
+   re-upsert the spec without its `id`, and never create it twice. Confirm
+   with `reqall:list_links` when the result was ambiguous.
+
+6. **Report in one line** — "Intent: #<id> <kind> <title> (created|updated|
    existing), linked to #a, #b." Then start the work.
 
 The PostToolUse hook records the ids of spec/arch records written or read

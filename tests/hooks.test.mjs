@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { mkdtempSync, readdirSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +22,27 @@ function runHook(name, input, env = {}) {
   assert.equal(result.status, 0, `hook ${name} exited ${result.status}: ${result.stderr}`);
   const out = result.stdout.trim();
   return out ? JSON.parse(out) : null;
+}
+
+
+/** Async variant for tests that run an in-process mock server: spawnSync would block it. */
+function runHookAsync(name, input, env = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [join(root, 'dist', 'src', 'hooks', `${name}.js`)], {
+      env: { ...process.env, REQALL_PROJECT_NAME: 'TestProj', ...env },
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (c) => (stdout += c));
+    child.stderr.on('data', (c) => (stderr += c));
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code !== 0) return reject(new Error(`hook ${name} exited ${code}: ${stderr}`));
+      const out = stdout.trim();
+      resolve(out ? JSON.parse(out) : null);
+    });
+    child.stdin.end(JSON.stringify(input));
+  });
 }
 
 function dataDir() {
@@ -90,7 +112,7 @@ test('post-tool interval of 0 disables throttling', () => {
   assert.notEqual(runHook('post-tool', input, env), null);
 });
 
-test('stop blocks active sessions and clears the activity marker', () => {
+test('stop blocks active sessions and clears the activity marker only after verification', () => {
   const data = dataDir();
   const env = {
     CLAUDE_PLUGIN_DATA: data,
@@ -103,8 +125,12 @@ test('stop blocks active sessions and clears the activity marker', () => {
   assert.equal(out.decision, 'block');
   assert.match(out.reason, /reqall:persist/);
   assert.match(out.reason, /TestProj/);
+  const still = runHook('stop', { session_id: 's2', stop_hook_active: false }, env);
+  assert.equal(still.decision, 'block', 'a block is a request, not proof persist ran: marker survives');
+  const verify = runHook('stop', { session_id: 's2', stop_hook_active: true }, env);
+  assert.equal(verify, null, 'no intent owed: verification pass lets the turn end');
   const again = runHook('stop', { session_id: 's2', stop_hook_active: false }, env);
-  assert.equal(again, null, 'marker cleared after block; idle blocks disabled');
+  assert.equal(again, null, 'marker cleared by the verification pass; idle blocks disabled');
 });
 
 test('stop blocks idle sessions at the idle interval', () => {
@@ -220,7 +246,7 @@ test('intent-track records spec upserts (content-block response) and stop lists 
   const data = dataDir();
   const env = { CLAUDE_PLUGIN_DATA: data, REQALL_PERSIST_INTERVAL_MIN: '0', REQALL_IDLE_PERSIST_INTERVAL_MIN: '0' };
   const out = runHook(
-    'intent-track',
+    'reqall-track',
     {
       hook_event_name: 'PostToolUse',
       session_id: 'i1',
@@ -238,18 +264,101 @@ test('intent-track records spec upserts (content-block response) and stop lists 
   assert.match(stop.reason, /links: \[\{target_id: <intent id>, relationship: "implements"\}\]/);
   assert.match(stop.reason, /links: \[\{target_id: <intent id>, relationship: "blocks"\}\]/);
   assert.doesNotMatch(stop.reason, /upsert_link (work|todo)/);
-  // Cleared once persist was forced: PreCompact no longer lists it.
+  // Persist wrote a work record linking the spec inline: the verification pass clears it.
+  runHook(
+    'reqall-track',
+    {
+      session_id: 'i1',
+      tool_name: 'mcp__plugin_reqall_reqall__upsert_record',
+      tool_input: { kind: 'work', title: 'WORK: x', links: [{ target_id: 4695, relationship: 'implements' }] },
+      tool_response: [{ type: 'text', text: JSON.stringify({ ok: true, data: { action: 'created', record: { id: 9001, kind: 'work', title: 'WORK: x' }, links: [{ target_id: 4695, target_table: 'records', relationship: 'implements', direction: 'outgoing', action: 'created' }] } }) }],
+    },
+    env,
+  );
+  assert.equal(runHook('stop', { session_id: 'i1', stop_hook_active: true }, env), null, 'covered intent: no re-block');
   const pc = runHook('pre-compact', { session_id: 'i1' }, env);
   assert.doesNotMatch(pc.hookSpecificOutput.additionalContext, /#4695/);
+});
+
+test('stop re-blocks once when persist ran without linking the intent, then keeps it on file', () => {
+  const data = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_PERSIST_INTERVAL_MIN: '0', REQALL_IDLE_PERSIST_INTERVAL_MIN: '0' };
+  runHook(
+    'reqall-track',
+    { session_id: 'v1', tool_name: 'mcp__plugin_reqall_reqall__upsert_record', tool_input: { kind: 'spec', title: 'SPEC: Intent flow' }, tool_response: [{ type: 'text', text: specResponse }] },
+    env,
+  );
+  assert.equal(runHook('stop', { session_id: 'v1', stop_hook_active: false }, env).decision, 'block');
+  // persist wrote an outcome but forgot the link
+  runHook(
+    'reqall-track',
+    { session_id: 'v1', tool_name: 'mcp__plugin_reqall_reqall__upsert_record', tool_input: { kind: 'work', title: 'WORK: x' }, tool_response: { ok: true, data: { action: 'created', record: { id: 9002, kind: 'work', title: 'WORK: x' } } } },
+    env,
+  );
+  const re = runHook('stop', { session_id: 'v1', stop_hook_active: true }, env);
+  assert.equal(re.decision, 'block', 'uncovered written intent re-blocks once');
+  assert.match(re.reason, /no outcome record links to #4695 spec "SPEC: Intent flow"/);
+  assert.match(re.reason, /Add the link inline via upsert_record on the existing work\/todo record/);
+  const through = runHook('stop', { session_id: 'v1', stop_hook_active: true }, env);
+  assert.equal(through, null, 'never re-blocks twice in one cycle');
+  const next = runHook('stop', { session_id: 'v1', stop_hook_active: false }, env);
+  assert.equal(next.decision, 'block', 'the owed intent is still persistable work at the next Stop');
+  assert.match(next.reason, /Intent records written this session: #4695/);
+});
+
+test('stop verification pass ignores blocks it did not issue and clears via blocks links too', () => {
+  const data = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_PERSIST_INTERVAL_MIN: '0', REQALL_IDLE_PERSIST_INTERVAL_MIN: '0' };
+  runHook(
+    'reqall-track',
+    { session_id: 'v2', tool_name: 'mcp__Reqall__upsert_record', tool_input: { kind: 'spec', title: 'SPEC: Intent flow' }, tool_response: [{ type: 'text', text: specResponse }] },
+    env,
+  );
+  assert.equal(runHook('stop', { session_id: 'v2', stop_hook_active: true }, env), null, 'no block_at: another hook blocked');
+  assert.equal(runHook('stop', { session_id: 'v2', stop_hook_active: false }, env).decision, 'block');
+  runHook(
+    'reqall-track',
+    {
+      session_id: 'v2',
+      tool_name: 'mcp__Reqall__upsert_record',
+      tool_input: { kind: 'todo', title: 'TASK: gap' },
+      tool_response: { ok: true, data: { action: 'created', record: { id: 9003, kind: 'todo', title: 'TASK: gap' }, links: [{ target_id: 4695, relationship: 'blocks', action: 'existing' }] } },
+    },
+    env,
+  );
+  assert.equal(runHook('stop', { session_id: 'v2', stop_hook_active: true }, env), null);
+  assert.doesNotMatch(runHook('pre-compact', { session_id: 'v2' }, env).hookSpecificOutput.additionalContext, /#4695/);
+});
+
+test('a failed or errored link result does not count as reconciliation', () => {
+  const data = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_PERSIST_INTERVAL_MIN: '0', REQALL_IDLE_PERSIST_INTERVAL_MIN: '0' };
+  runHook(
+    'reqall-track',
+    { session_id: 'v3', tool_name: 'mcp__Reqall__upsert_record', tool_input: { kind: 'spec' }, tool_response: [{ type: 'text', text: specResponse }] },
+    env,
+  );
+  runHook('stop', { session_id: 'v3', stop_hook_active: false }, env);
+  runHook(
+    'reqall-track',
+    {
+      session_id: 'v3',
+      tool_name: 'mcp__Reqall__upsert_record',
+      tool_input: { kind: 'work' },
+      tool_response: { ok: true, data: { record: { id: 9004, kind: 'work', title: 'W' }, links: [{ target_id: 4695, relationship: 'implements', action: 'error', error: 'boom' }] } },
+    },
+    env,
+  );
+  assert.equal(runHook('stop', { session_id: 'v3', stop_hook_active: true }, env).decision, 'block');
 });
 
 test('intent-track accepts an object response, the claude.ai namespace, and de-duplicates by id', () => {
   const data = dataDir();
   const env = { CLAUDE_PLUGIN_DATA: data };
   const base = { session_id: 'i2', tool_name: 'mcp__Reqall__upsert_record' };
-  runHook('intent-track', { ...base, tool_input: { kind: 'arch', title: 'ARCH: X' }, tool_response: JSON.parse(specResponse) }, env);
+  runHook('reqall-track', { ...base, tool_input: { kind: 'arch', title: 'ARCH: X' }, tool_response: JSON.parse(specResponse) }, env);
   runHook(
-    'intent-track',
+    'reqall-track',
     {
       ...base,
       tool_input: { id: 4695, body: 'updated' },
@@ -268,12 +377,12 @@ test('intent-track ignores non-intent kinds and other tools', () => {
   const env = { CLAUDE_PLUGIN_DATA: data };
   const todo = JSON.stringify({ ok: true, data: { action: 'created', record: { id: 7, kind: 'todo', title: 'TASK: x' } } });
   runHook(
-    'intent-track',
+    'reqall-track',
     { session_id: 'i3', tool_name: 'mcp__plugin_reqall_reqall__upsert_record', tool_input: { kind: 'todo' }, tool_response: [{ type: 'text', text: todo }] },
     env,
   );
   runHook(
-    'intent-track',
+    'reqall-track',
     { session_id: 'i3', tool_name: 'mcp__plugin_reqall_reqall__upsert_link', tool_input: {}, tool_response: specResponse },
     env,
   );
@@ -285,7 +394,7 @@ test('intent-track falls back to tool_input when the response carries no record'
   const data = dataDir();
   const env = { CLAUDE_PLUGIN_DATA: data };
   runHook(
-    'intent-track',
+    'reqall-track',
     { session_id: 'i4', tool_name: 'mcp__plugin_reqall_reqall__upsert_record', tool_input: { id: 42, kind: 'spec', title: 'SPEC: from input' }, tool_response: 'ok' },
     env,
   );
@@ -297,7 +406,7 @@ test('intent-track records get_record reads as consulted; consulted alone does n
   const data = dataDir();
   const env = { CLAUDE_PLUGIN_DATA: data, REQALL_PERSIST_INTERVAL_MIN: '0', REQALL_IDLE_PERSIST_INTERVAL_MIN: '0' };
   runHook(
-    'intent-track',
+    'reqall-track',
     {
       session_id: 'c1',
       tool_name: 'mcp__plugin_reqall_reqall__get_record',
@@ -318,7 +427,7 @@ test('intent-track ignores get_record of non-intent kinds and never trusts tool_
   const data = dataDir();
   const env = { CLAUDE_PLUGIN_DATA: data };
   runHook(
-    'intent-track',
+    'reqall-track',
     {
       session_id: 'c2',
       tool_name: 'mcp__Reqall__get_record',
@@ -327,7 +436,7 @@ test('intent-track ignores get_record of non-intent kinds and never trusts tool_
     },
     env,
   );
-  runHook('intent-track', { session_id: 'c2', tool_name: 'mcp__Reqall__get_record', tool_input: { id: 8 }, tool_response: 'ok' }, env);
+  runHook('reqall-track', { session_id: 'c2', tool_name: 'mcp__Reqall__get_record', tool_input: { id: 8 }, tool_response: 'ok' }, env);
   const pc = runHook('pre-compact', { session_id: 'c2' }, env);
   assert.doesNotMatch(pc.hookSpecificOutput.additionalContext, /Intent records|consulted/);
 });
@@ -338,8 +447,8 @@ test('a write is sticky over a read for the same id, in either order', () => {
   const rec = { id: 4695, kind: 'spec', title: 'SPEC: Intent flow' };
   const read = { session_id: 'w1', tool_name: 'mcp__plugin_reqall_reqall__get_record', tool_input: { id: 4695 }, tool_response: { data: { record: rec } } };
   const write = { session_id: 'w1', tool_name: 'mcp__plugin_reqall_reqall__upsert_record', tool_input: { id: 4695, body: 'x' }, tool_response: { data: { action: 'updated', record: rec } } };
-  runHook('intent-track', write, env);
-  runHook('intent-track', read, env);
+  runHook('reqall-track', write, env);
+  runHook('reqall-track', read, env);
   const pc = runHook('pre-compact', { session_id: 'w1' }, env);
   const ctx = pc.hookSpecificOutput.additionalContext;
   assert.match(ctx, /written this session: #4695/);
@@ -351,7 +460,7 @@ test('pre-compact marks intents handed off; stop then asks to verify rather than
   const data = dataDir();
   const env = { CLAUDE_PLUGIN_DATA: data, REQALL_PERSIST_INTERVAL_MIN: '0', REQALL_IDLE_PERSIST_INTERVAL_MIN: '0' };
   runHook(
-    'intent-track',
+    'reqall-track',
     { session_id: 'h1', tool_name: 'mcp__plugin_reqall_reqall__upsert_record', tool_input: { kind: 'spec', title: 'SPEC: Intent flow' }, tool_response: [{ type: 'text', text: specResponse }] },
     env,
   );
@@ -369,9 +478,9 @@ test('a fresh write after hand-off clears the handed-off mark', () => {
   const data = dataDir();
   const env = { CLAUDE_PLUGIN_DATA: data, REQALL_PERSIST_INTERVAL_MIN: '0', REQALL_IDLE_PERSIST_INTERVAL_MIN: '0' };
   const write = { session_id: 'h2', tool_name: 'mcp__plugin_reqall_reqall__upsert_record', tool_input: { kind: 'spec', title: 'SPEC: Intent flow' }, tool_response: [{ type: 'text', text: specResponse }] };
-  runHook('intent-track', write, env);
+  runHook('reqall-track', write, env);
   runHook('pre-compact', { session_id: 'h2' }, env);
-  runHook('intent-track', write, env);
+  runHook('reqall-track', write, env);
   const stop = runHook('stop', { session_id: 'h2', stop_hook_active: false }, env);
   assert.match(stop.reason, /Intent records written this session: #4695/);
   assert.doesNotMatch(stop.reason, /already handed/);
@@ -465,4 +574,201 @@ test('REQALL_MACHINE_NAME overrides the hostname segment', () => {
   assert.equal(result.status, 0, result.stderr);
   const out = JSON.parse(result.stdout.trim());
   assert.match(out.hookSpecificOutput.additionalContext, /project_name=\.machine\/ci-box\//);
+});
+
+test('post-tool ignores read-only Bash commands but counts mutating ones', () => {
+  const data = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_DOC_INTERVAL_MIN: '0', REQALL_PERSIST_INTERVAL_MIN: '0', REQALL_IDLE_PERSIST_INTERVAL_MIN: '0' };
+  for (const command of ['git status', 'ls -la src', 'cat package.json', 'rg -n foo src/', 'git log --oneline -5']) {
+    assert.equal(runHook('post-tool', { session_id: 'b1', tool_name: 'Bash', tool_input: { command } }, env), null, command);
+  }
+  assert.equal(runHook('stop', { session_id: 'b1', stop_hook_active: false }, env), null, 'read-only shell is not activity');
+  for (const command of ['npm run build', 'git commit -m x', 'cat a > b', 'ls && rm -rf dist', 'echo $(date) | tee log']) {
+    assert.notEqual(runHook('post-tool', { session_id: 'b2', tool_name: 'Bash', tool_input: { command } }, env), null, command);
+  }
+  assert.equal(runHook('stop', { session_id: 'b2', stop_hook_active: false }, env).decision, 'block');
+});
+
+test('reqall-track remembers upsert_project and subscribe_project; user-prompt-submit then asks the model to poll', () => {
+  const data = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_INTENT_INTERVAL_MIN: '0', REQALL_API_KEY: '' };
+  const prompt = { session_id: 'sub1', prompt: 'please refactor the upload endpoint and add tests for it' };
+  const before = runHook('user-prompt-submit', prompt, env);
+  assert.doesNotMatch(before.hookSpecificOutput.additionalContext, /poll_subscriptions/, 'not subscribed yet');
+  runHook(
+    'reqall-track',
+    { session_id: 'sub1', tool_name: 'mcp__plugin_reqall_reqall__upsert_project', tool_input: { name: 'TestProj' }, tool_response: [{ type: 'text', text: JSON.stringify({ ok: true, data: { action: 'created_or_found', project: { id: 1286, name: 'TestProj' } } }) }] },
+    env,
+  );
+  runHook(
+    'reqall-track',
+    { session_id: 'sub1', tool_name: 'mcp__plugin_reqall_reqall__subscribe_project', tool_input: { project_id: 1286, subscriber: 'sub1' }, tool_response: { ok: true, data: { action: 'created', subscription: { id: 3, project_id: 1286, subscriber: 'sub1', cursor: 74 } } } },
+    env,
+  );
+  runHook(
+    'reqall-track',
+    { session_id: 'sub1', tool_name: 'mcp__plugin_reqall_reqall__upsert_record', tool_input: { kind: 'todo' }, tool_response: { ok: true, data: { record: { id: 555, kind: 'todo', title: 'T' } } } },
+    env,
+  );
+  const after = runHook('user-prompt-submit', { session_id: 'sub1', prompt: 'ok' }, env);
+  const ctx = after.hookSpecificOutput.additionalContext;
+  assert.match(ctx, /poll_subscriptions/);
+  assert.match(ctx, /subscriber="sub1"/);
+  assert.match(ctx, /project_id=1286/);
+  assert.match(ctx, /#555/, 'own writes are named so the model can skip actor=self events');
+  assert.doesNotMatch(ctx, /reqall:intend/, 'a short acknowledgement gets the poll line only');
+  assert.equal(runHook('user-prompt-submit', { session_id: 'sub1', prompt: '/reqall:review' }, env), null, 'slash commands never poll');
+});
+
+test('session-start asks the context skill to subscribe once, with the session id', () => {
+  const data = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_API_KEY: '' };
+  const first = runHook('session-start', { session_id: 'ss1', cwd: root }, env);
+  assert.match(first.hookSpecificOutput.additionalContext, /subscribe_project .*subscriber="ss1"/);
+  assert.match(first.hookSpecificOutput.additionalContext, /session_id="ss1"/);
+  runHook(
+    'reqall-track',
+    { session_id: 'ss1', tool_name: 'mcp__Reqall__subscribe_project', tool_input: { project_id: 7 }, tool_response: { ok: true, data: { subscription: { project_id: 7 } } } },
+    env,
+  );
+  const compact = runHook('session-start', { session_id: 'ss1', cwd: root, source: 'compact' }, env);
+  assert.doesNotMatch(compact.hookSpecificOutput.additionalContext, /subscribe_project/, 'already subscribed');
+});
+
+test('user-prompt-submit remembers a labelled project_name= selection for non-repo sessions', () => {
+  const data = dataDir();
+  const dir = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_PROJECT_NAME: '', REQALL_INTENT_INTERVAL_MIN: '0', REQALL_API_KEY: '' };
+  runHook('user-prompt-submit', { session_id: 'pp1', cwd: dir, prompt: 'work in project_name=acme/widgets please, add the parser' }, env);
+  const out = runHook('session-start', { session_id: 'pp1', cwd: dir }, env);
+  assert.match(out.hookSpecificOutput.additionalContext, /project_name=acme\/widgets/);
+  // Prose paths are never a project.
+  runHook('user-prompt-submit', { session_id: 'pp2', cwd: dir, prompt: 'edit src/auth.py and the project/README please' }, env);
+  assert.match(runHook('session-start', { session_id: 'pp2', cwd: dir }, env).hookSpecificOutput.additionalContext, /project_name=\.machine\//);
+  // Git origin still wins over the prompt.
+  runHook('user-prompt-submit', { session_id: 'pp3', cwd: root, prompt: 'project_name=acme/widgets: refactor the hooks' }, env);
+  assert.match(runHook('session-start', { session_id: 'pp3', cwd: root }, env).hookSpecificOutput.additionalContext, /ReqallSystem\/claude-plugin/);
+});
+
+test('session-end removes every state file for the session and leaves other sessions alone', () => {
+  const data = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_DOC_INTERVAL_MIN: '0', REQALL_API_KEY: '' };
+  runHook('post-tool', { session_id: 'e1', tool_name: 'Write', tool_input: { file_path: '/a' } }, env);
+  runHook('post-tool', { session_id: 'e2', tool_name: 'Write', tool_input: { file_path: '/a' } }, env);
+  runHook('reqall-track', { session_id: 'e1', tool_name: 'mcp__Reqall__upsert_record', tool_input: { kind: 'spec' }, tool_response: specResponse }, env);
+  assert.ok(readdirSync(data).some((f) => f.endsWith('-e1')));
+  assert.equal(runHook('session-end', { session_id: 'e1', reason: 'exit' }, env), null);
+  assert.ok(!readdirSync(data).some((f) => f.endsWith('-e1')), 'e1 files gone');
+  assert.ok(readdirSync(data).some((f) => f.endsWith('-e2')), 'e2 files kept');
+});
+
+/** Minimal Reqall MCP server: tools/call over JSON-RPC, canned per tool. */
+function mockServer(handlers, calls) {
+  const server = createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      const rpc = JSON.parse(body);
+      const { name, arguments: args } = rpc.params;
+      calls.push({ name, args, auth: req.headers.authorization });
+      const data = handlers[name] ? handlers[name](args) : undefined;
+      const payload =
+        data === undefined
+          ? { jsonrpc: '2.0', id: rpc.id, error: { code: -32601, message: `Unknown tool: ${name}` } }
+          : { jsonrpc: '2.0', id: rpc.id, result: { content: [{ type: 'text', text: JSON.stringify({ ok: true, data }) }], structuredContent: { ok: true, data } } };
+      if (handlers.__sse) {
+        res.writeHead(200, { 'content-type': 'text/event-stream' });
+        res.end(`event: message\ndata: ${JSON.stringify(payload)}\n\n`);
+      } else {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(payload));
+      }
+    });
+  });
+  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ server, url: `http://127.0.0.1:${server.address().port}` })));
+}
+
+const poll = (events, has_more = false) => ({
+  results: [{ subscription: { id: 3, project_id: 1286, project_name: 'TestProj', subscriber: 'k1', cursor: 74 }, events, has_more, next_cursor: 74 }],
+  total_events: events.length,
+});
+const ev = (action, record_id, extra = {}) => ({ id: 1, project_id: 1286, action, record_id, kind: 'todo', title: 'T', actor: 'other', ...extra });
+
+test('API-key mode: the hook binds, subscribes once, polls each prompt, and injects other sessions\' changes', async () => {
+  const data = dataDir();
+  const calls = [];
+  let events = [];
+  const { server, url } = await mockServer(
+    {
+      upsert_project: (a) => ({ action: 'created_or_found', project: { id: 1286, name: a.name } }),
+      subscribe_project: (a) => ({ action: 'created', subscription: { project_id: a.project_id, subscriber: a.subscriber, cursor: 74 } }),
+      poll_subscriptions: () => poll(events),
+      unsubscribe_project: () => ({ removed: 1 }),
+    },
+    calls,
+  );
+  try {
+    const env = { CLAUDE_PLUGIN_DATA: data, REQALL_API_KEY: 'rq_test', REQALL_URL: url, REQALL_INTENT_INTERVAL_MIN: '0' };
+    const quiet = await runHookAsync('user-prompt-submit', { session_id: 'k1', prompt: 'implement the widget and its tests' }, env);
+    assert.deepEqual(calls.map((c) => c.name), ['upsert_project', 'subscribe_project', 'poll_subscriptions']);
+    assert.equal(calls[0].auth, 'Bearer rq_test');
+    assert.deepEqual(calls[1].args, { project_id: 1286, subscriber: 'k1' });
+    assert.deepEqual(calls[2].args, { subscriber: 'k1', project_id: 1286, limit: 20 });
+    assert.doesNotMatch(quiet.hookSpecificOutput.additionalContext, /Reqall updates/, 'quiet poll injects nothing');
+    assert.doesNotMatch(quiet.hookSpecificOutput.additionalContext, /poll_subscriptions/, 'hook polled itself; model is not asked to');
+
+    runHook('reqall-track', { session_id: 'k1', tool_name: 'mcp__Reqall__upsert_record', tool_input: { kind: 'todo' }, tool_response: { ok: true, data: { record: { id: 5, kind: 'todo', title: 'Mine' } } } }, env);
+    calls.length = 0;
+    events = [ev('record.created', 5, { actor: 'self', title: 'My own write' }), ev('record.updated', 6, { title: 'Teammate change', kind: 'spec' }), ev('record.updated', 7, { actor: 'self', title: 'Other session of mine' })];
+    const second = await runHookAsync('user-prompt-submit', { session_id: 'k1', prompt: 'thanks, continue' }, env);
+    assert.deepEqual(calls.map((c) => c.name), ['poll_subscriptions'], 'already bound and subscribed');
+    const ctx = second.hookSpecificOutput.additionalContext;
+    assert.match(ctx, /## Reqall updates since last turn/);
+    assert.match(ctx, /TestProj: record.updated #6 \[spec\]: Teammate change/);
+    assert.match(ctx, /#7 \[todo\] \(you, another session\): Other session of mine/);
+    assert.doesNotMatch(ctx, /My own write/);
+
+    calls.length = 0;
+    await runHookAsync('session-end', { session_id: 'k1', reason: 'exit' }, env);
+    assert.deepEqual(calls.map((c) => c.name), ['unsubscribe_project'], 'hook-owned cursor released at session end');
+    assert.deepEqual(calls[0].args, { project_id: 1286, subscriber: 'k1' });
+  } finally {
+    server.close();
+  }
+});
+
+test('API-key mode: an older server without subscription tools is detected once and left alone', async () => {
+  const data = dataDir();
+  const calls = [];
+  const { server, url } = await mockServer(
+    { __sse: true, upsert_project: (a) => ({ action: 'created_or_found', project: { id: 1, name: a.name } }) },
+    calls,
+  );
+  try {
+    const env = { CLAUDE_PLUGIN_DATA: data, REQALL_API_KEY: 'rq_test', REQALL_URL: url, REQALL_INTENT_INTERVAL_MIN: '0' };
+    await runHookAsync('user-prompt-submit', { session_id: 'k2', prompt: 'implement the widget and its tests' }, env);
+    assert.deepEqual(calls.map((c) => c.name), ['upsert_project', 'subscribe_project']);
+    calls.length = 0;
+    const out = await runHookAsync('user-prompt-submit', { session_id: 'k2', prompt: 'and now implement the other widget as well please' }, env);
+    assert.deepEqual(calls, [], 'no further network once unsupported');
+    assert.doesNotMatch(out.hookSpecificOutput.additionalContext, /poll_subscriptions|Reqall updates/);
+  } finally {
+    server.close();
+  }
+});
+
+test('API-key mode: an unreachable server fails open with the intent nudge intact', () => {
+  const data = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_API_KEY: 'rq_test', REQALL_URL: 'http://127.0.0.1:9', REQALL_INTENT_INTERVAL_MIN: '0' };
+  const out = runHook('user-prompt-submit', { session_id: 'k3', prompt: 'implement the widget and its tests' }, env);
+  assert.match(out.hookSpecificOutput.additionalContext, /reqall:intend/);
+  assert.doesNotMatch(out.hookSpecificOutput.additionalContext, /Reqall updates/);
+});
+
+test('REQALL_POLL_INTERVAL_MIN throttles the poll instruction', () => {
+  const data = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_INTENT_INTERVAL_MIN: '0', REQALL_POLL_INTERVAL_MIN: '30', REQALL_API_KEY: '' };
+  runHook('reqall-track', { session_id: 't1', tool_name: 'mcp__Reqall__subscribe_project', tool_input: { project_id: 7 }, tool_response: { ok: true, data: { subscription: { project_id: 7 } } } }, env);
+  assert.match(runHook('user-prompt-submit', { session_id: 't1', prompt: 'hi' }, env).hookSpecificOutput.additionalContext, /poll_subscriptions/);
+  assert.equal(runHook('user-prompt-submit', { session_id: 't1', prompt: 'hi' }, env), null, 'throttled');
 });
