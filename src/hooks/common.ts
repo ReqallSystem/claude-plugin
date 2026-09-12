@@ -5,8 +5,7 @@
  * by printing a JSON object to stdout (exit code 0). Printing nothing means
  * "no action". See https://code.claude.com/docs/en/hooks
  */
-import { execFileSync } from 'node:child_process';
-import { hostname as osHostname, userInfo } from 'node:os';
+import { resolveProjectBinding, machineProjectName as policyMachineProjectName, extractProjectHint as policyProjectHint } from './project-policy.js';
 import {
   appendFileSync,
   existsSync,
@@ -54,31 +53,12 @@ export function sessionKey(input: HookInput): string {
  * links it parent→ this project on first upsert.
  */
 export function machineProjectName(): string {
-  const clean = (seg: string) => seg.trim().replace(/[\\/\s]+/g, '-').replace(/^-+|-+$/g, '') || 'unknown';
-  const host = process.env.REQALL_MACHINE_NAME?.trim() || osHostname().split('.')[0];
-  let user = 'unknown';
-  try {
-    user = userInfo().username || 'unknown';
-  } catch {
-    // userInfo can throw on exotic environments (no passwd entry)
-  }
-  return `.machine/${clean(host).toLowerCase()}/${clean(user)}`;
+  return policyMachineProjectName();
 }
 
-/**
- * An explicitly labelled project selection in prose: `project_name=org/repo`,
- * `project: "org/repo"`. Incidental slash tokens (paths, URLs) never match.
- */
-const PROJECT_KV = /(?<![\w/-])project(?:_name)?\s*[:=]\s*(?:`([^`\r\n]+)`|'([^'\r\n]+)'|"([^"\r\n]+)"|([^\s`'",;]+))/i;
-
+/** Parse only a deliberate user label using the canonical policy. */
 export function extractProjectHint(text: string | undefined): string | undefined {
-  if (!text) return undefined;
-  const m = PROJECT_KV.exec(text);
-  if (!m) return undefined;
-  // An unquoted value in prose can carry sentence punctuation
-  // (`project_name=acme/widgets: refactor …`); quoted forms are taken as-is.
-  const value = (m[1] ?? m[2] ?? m[3] ?? (m[4] ?? '').replace(/[.,:;!?)\]]+$/, '')).trim();
-  return value || undefined;
+  return typeof text === 'string' ? policyProjectHint(text) || undefined : undefined;
 }
 
 /** Project names are unique case-insensitively server-side; compare the same way. */
@@ -89,42 +69,29 @@ export function sameProject(a: string | undefined, b: string | undefined): boole
 /**
  * Whether the session's subscription (if any) was bound under a different
  * project than the one now resolved — a later `project_name=` selection in a
- * non-repo session, for instance. Unknown binding names count as current.
+ * non-repo session, for instance. An unknown name must be validated/rebound,
+ * never assumed current; retain its id only so the old cursor can be released.
  */
 export function subscriptionStale(st: SessionState, name: string): boolean {
   return (
     st.subscribed_project_id !== undefined &&
-    st.subscribed_project_name !== undefined &&
     !sameProject(st.subscribed_project_name, name)
   );
 }
 
-/**
- * REQALL_PROJECT_NAME > git remote org/repo > labelled `project_name=` from
- * a prompt this session (see UserPromptSubmit) > machine project. Never the
- * cwd basename.
- */
+/** Canonical environment > Git > retained selection > portable metadata/path > machine. */
 export function projectName(input: HookInput): string {
-  const env = process.env.REQALL_PROJECT_NAME;
-  if (env) return env;
-  const cwd = input.cwd || process.cwd();
-  try {
-    const url = execFileSync('git', ['remote', 'get-url', 'origin'], {
-      cwd,
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-    const match = url.match(/[:/]([^/]+\/[^/]+?)(\.git)?$/);
-    if (match) return match[1];
-  } catch {
-    // not a git repo or git unavailable — fall through
+  const key = sessionKey(input);
+  const state = readState(key);
+  const name = resolveProjectBinding(input.cwd || process.cwd(), process.env, '', state.prompt_project).name;
+  if (!sameProject(state.project_name, name)) {
+    updateState(key, (st) => {
+      delete st.project_id;
+      st.project_name = name;
+      // Keep the previous subscription identity until its cursor can be released.
+    });
   }
-  const selected = readState(sessionKey(input)).prompt_project;
-  if (selected) return selected;
-  // Sessions outside any repo are machine memory, not a project named after
-  // whatever directory we happen to be in (which minted junk like "dev",
-  // "Work", or UUID worktree names).
-  return machineProjectName();
+  return name;
 }
 
 /** Emit additionalContext for the given event and exit 0. */

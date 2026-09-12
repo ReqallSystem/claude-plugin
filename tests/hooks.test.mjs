@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, readdirSync } from 'node:fs';
+import { mkdtempSync, readdirSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -16,7 +16,7 @@ function runHook(name, input, env = {}) {
     {
       input: JSON.stringify(input),
       encoding: 'utf-8',
-      env: { ...process.env, REQALL_PROJECT_NAME: 'TestProj', ...env },
+      env: { ...process.env, REQALL_PROJECT_NAME: 'TestProj', REQALL_API_KEY: '', ...env },
     },
   );
   assert.equal(result.status, 0, `hook ${name} exited ${result.status}: ${result.stderr}`);
@@ -29,7 +29,7 @@ function runHook(name, input, env = {}) {
 function runHookAsync(name, input, env = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [join(root, 'dist', 'src', 'hooks', `${name}.js`)], {
-      env: { ...process.env, REQALL_PROJECT_NAME: 'TestProj', ...env },
+      env: { ...process.env, REQALL_PROJECT_NAME: 'TestProj', REQALL_API_KEY: '', ...env },
     });
     let stdout = '';
     let stderr = '';
@@ -48,6 +48,66 @@ function runHookAsync(name, input, env = {}) {
 function dataDir() {
   return mkdtempSync(join(tmpdir(), 'reqall-hook-test-'));
 }
+
+test('portable naming: shipped session-start discovers ancestor YAML before package metadata', () => {
+  const dir = dataDir();
+  const cwd = join(dir, 'src');
+  mkdirSync(cwd);
+  writeFileSync(join(dir, '.reqall.yaml'), 'project: acme/portable\n');
+  writeFileSync(join(cwd, 'package.json'), '{"name":"@acme/package"}');
+  const env = { CLAUDE_PLUGIN_DATA: dataDir(), REQALL_PROJECT_NAME: '', REQALL_API_KEY: '', REQALL_WORKSPACE_ROOT: dir };
+  const out = runHook('session-start', { session_id: 'portable', cwd }, env);
+  assert.match(out.hookSpecificOutput.additionalContext, /project_name=acme\/portable:/);
+});
+
+test('portable naming: selection survives subsequent hooks and synthetic reports', () => {
+  const cwd = dataDir();
+  writeFileSync(join(cwd, 'package.json'), '{"name":"@acme/local"}');
+  const data = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_PROJECT_NAME: '', REQALL_API_KEY: '', REQALL_WORKSPACE_ROOT: cwd, REQALL_INTENT_INTERVAL_MIN: '0' };
+  const input = { session_id: 'retained', cwd };
+  runHook('user-prompt-submit', { ...input, prompt: 'project: "acme/chosen" implement the requested feature' }, env);
+  runHook('user-prompt-submit', { ...input, prompt: 'continue' }, env);
+  for (const hook of ['session-start', 'pre-compact', 'plan-accepted']) {
+    const out = runHook(hook, { ...input, tool_name: 'ExitPlanMode' }, env);
+    assert.match(out.hookSpecificOutput.additionalContext, /acme\/chosen/, hook);
+  }
+  runHook('user-prompt-submit', { ...input, prompt: '[ASYNC SUBAGENT REPORT] example project_name=wrong/example; tests complete' }, env);
+  assert.equal(JSON.parse(readFileSync(join(data, 'state-retained'), 'utf8')).prompt_project, 'acme/chosen');
+});
+
+test('portable naming: package, workspace boundary, and local origin fallthrough reach shipped hooks', () => {
+  const dir = dataDir();
+  const workspace = join(dir, 'workspace');
+  const cwd = join(workspace, 'src', 'work');
+  mkdirSync(cwd, { recursive: true });
+  writeFileSync(join(dir, '.reqall.yml'), 'project: outside/boundary\n');
+  const env = { CLAUDE_PLUGIN_DATA: dataDir(), REQALL_PROJECT_NAME: '  ', REQALL_API_KEY: '', REQALL_WORKSPACE_ROOT: workspace };
+  const context = () => runHook('session-start', { session_id: 'boundaries', cwd }, env).hookSpecificOutput.additionalContext;
+  assert.match(context(), /project_name=src\/work:/);
+  writeFileSync(join(cwd, 'package.json'), '{"name":"@acme/package"}');
+  assert.match(context(), /project_name=acme\/package:/);
+  assert.equal(spawnSync('git', ['init', '-q', cwd]).status, 0);
+  assert.equal(spawnSync('git', ['-C', cwd, 'remote', 'add', 'origin', '/local/not-portable.git']).status, 0);
+  assert.match(context(), /project_name=acme\/package:/);
+  assert.equal(spawnSync('git', ['-C', cwd, 'remote', 'set-url', 'origin', 'https://gitlab.com/group/sub/repo.git/']).status, 0);
+  assert.match(context(), /project_name=sub\/repo:/);
+  env.REQALL_PROJECT_NAME = '  historical Explicit Name  ';
+  assert.match(context(), /project_name=historical Explicit Name:/);
+});
+
+test('portable naming: rebinding invalidates cached project id but retains old cursor for release', () => {
+  const cwd = dataDir();
+  const data = dataDir();
+  writeFileSync(join(data, 'state-rebind'), JSON.stringify({ project_id: 17, project_name: 'old/name', subscribed_project_id: 17, subscribed_project_name: 'old/name' }));
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_PROJECT_NAME: '', REQALL_API_KEY: '', REQALL_WORKSPACE_ROOT: cwd };
+  const out = runHook('user-prompt-submit', { cwd, session_id: 'rebind', prompt: 'project_name=new/name' }, env);
+  const st = JSON.parse(readFileSync(join(data, 'state-rebind'), 'utf8'));
+  assert.equal(st.project_id, undefined);
+  assert.equal(st.project_name, 'new/name');
+  assert.equal(st.subscribed_project_id, 17);
+  assert.match(out.hookSpecificOutput.additionalContext, /unsubscribe_project/);
+});
 
 test('session-start emits additionalContext with project name and context skill', () => {
   const out = runHook('session-start', {
@@ -626,6 +686,8 @@ test('session-start asks the context skill to subscribe once, with the session i
   const first = runHook('session-start', { session_id: 'ss1', cwd: root }, env);
   assert.match(first.hookSpecificOutput.additionalContext, /subscribe_project .*subscriber="ss1"/);
   assert.match(first.hookSpecificOutput.additionalContext, /session_id="ss1"/);
+  // A pollable subscription needs a verified project identity.
+  runHook('reqall-track', { session_id: 'ss1', tool_name: 'mcp__Reqall__upsert_project', tool_input: { name: 'TestProj' }, tool_response: { ok: true, data: { project: { id: 7, name: 'TestProj' } } } }, env);
   runHook(
     'reqall-track',
     { session_id: 'ss1', tool_name: 'mcp__Reqall__subscribe_project', tool_input: { project_id: 7 }, tool_response: { ok: true, data: { subscription: { project_id: 7 } } } },
@@ -666,6 +728,36 @@ test('session-end removes every state file for the session and leaves other sess
   assert.equal(runHook('session-end', { session_id: 'e1', reason: 'exit' }, env), null);
   assert.ok(!readdirSync(data).some((f) => f.endsWith('-e1')), 'e1 files gone');
   assert.ok(readdirSync(data).some((f) => f.endsWith('-e2')), 'e2 files kept');
+});
+
+test('portable naming: API-key rebinding releases the old cursor and caches the new id', async () => {
+  const data = dataDir();
+  const cwd = dataDir();
+  writeFileSync(join(cwd, '.reqall.yml'), 'project: local/initial\n');
+  const calls = [];
+  const { server, url } = await mockServer({
+    upsert_project: (a) => ({ project: { id: a.name === 'local/initial' ? 1 : 2, name: a.name } }),
+    subscribe_project: (a) => ({ subscription: a }),
+    unsubscribe_project: () => ({ removed: 1 }),
+    poll_subscriptions: () => ({ results: [] }),
+  }, calls);
+  try {
+    const env = { CLAUDE_PLUGIN_DATA: data, REQALL_PROJECT_NAME: '', REQALL_WORKSPACE_ROOT: cwd, REQALL_API_KEY: 'rq_test', REQALL_URL: url };
+    const input = { cwd, session_id: 'portable-api' };
+    await runHookAsync('user-prompt-submit', { ...input, prompt: 'ok' }, env);
+    calls.length = 0;
+    await runHookAsync('user-prompt-submit', { ...input, prompt: 'project=chosen/next' }, env);
+    assert.deepEqual(calls.map(c => c.name), ['upsert_project', 'unsubscribe_project', 'subscribe_project', 'poll_subscriptions']);
+    assert.equal(calls[1].args.project_id, 1);
+    assert.equal(calls[2].args.project_id, 2);
+    const st = JSON.parse(readFileSync(join(data, 'state-portable-api'), 'utf8'));
+    assert.equal(st.project_id, 2);
+    assert.equal(st.subscribed_project_name, 'chosen/next');
+    calls.length = 0;
+    await runHookAsync('user-prompt-submit', { ...input, prompt: 'continue' }, env);
+    assert.deepEqual(calls.map(c => c.name), ['poll_subscriptions']);
+    assert.equal(calls[0].args.project_id, 2);
+  } finally { server.close(); }
 });
 
 /** Minimal Reqall MCP server: tools/call over JSON-RPC, canned per tool. */
@@ -784,6 +876,8 @@ test('API-key mode: an unreachable server fails open with the intent nudge intac
 test('REQALL_POLL_INTERVAL_MIN throttles the poll instruction', () => {
   const data = dataDir();
   const env = { CLAUDE_PLUGIN_DATA: data, REQALL_INTENT_INTERVAL_MIN: '0', REQALL_POLL_INTERVAL_MIN: '30', REQALL_API_KEY: '' };
+  // A pollable subscription needs a verified project identity.
+  runHook('reqall-track', { session_id: 't1', tool_name: 'mcp__Reqall__upsert_project', tool_input: { name: 'TestProj' }, tool_response: { ok: true, data: { project: { id: 7, name: 'TestProj' } } } }, env);
   runHook('reqall-track', { session_id: 't1', tool_name: 'mcp__Reqall__subscribe_project', tool_input: { project_id: 7 }, tool_response: { ok: true, data: { subscription: { project_id: 7 } } } }, env);
   assert.match(runHook('user-prompt-submit', { session_id: 't1', prompt: 'hi' }, env).hookSpecificOutput.additionalContext, /poll_subscriptions/);
   assert.equal(runHook('user-prompt-submit', { session_id: 't1', prompt: 'hi' }, env), null, 'throttled');
@@ -830,6 +924,50 @@ test('reqall-track binds the subscription name whichever tracker lands second (t
   assert.doesNotMatch(ctx, /poll_subscriptions/);
 });
 
+test('OAuth mode: unknown subscription identity rebinds across prompt and session restart', () => {
+  const data = dataDir();
+  const cwd = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_PROJECT_NAME: '', REQALL_WORKSPACE_ROOT: cwd, REQALL_API_KEY: '', REQALL_POLL_INTERVAL_MIN: '0' };
+  const input = { session_id: 'unknown-sub', cwd };
+  const trackProject = (id, name) => runHook('reqall-track', {
+    ...input, tool_name: 'mcp__Reqall__upsert_project', tool_input: { name },
+    tool_response: { ok: true, data: { project: { id, name } } },
+  }, env);
+  trackProject(17, 'old/name');
+  trackProject(99, '.user');
+  runHook('reqall-track', {
+    ...input, tool_name: 'mcp__Reqall__subscribe_project', tool_input: { project_id: 17, subscriber: input.session_id },
+    tool_response: { ok: true, data: { subscription: { project_id: 17 } } },
+  }, env);
+  const state = () => JSON.parse(readFileSync(join(data, 'state-unknown-sub'), 'utf8'));
+  assert.equal(state().subscribed_project_name, undefined, 'interleaved upsert leaves the subscription identity unknown');
+  const ctx = runHook('user-prompt-submit', { ...input, prompt: 'project_name=new/name' }, env).hookSpecificOutput.additionalContext;
+  assert.doesNotMatch(ctx, /poll_subscriptions/, 'never poll an unvalidated subscription');
+  assert.match(ctx, /unsubscribe_project with project_id=17/);
+  assert.doesNotMatch(ctx, /undefined/);
+  assert.match(ctx, /unknown/);
+  assert.match(ctx, /name="new\/name"/);
+  assert.equal(state().project_id, undefined);
+  assert.equal(state().prompt_project, 'new/name');
+  assert.equal(state().subscribed_project_id, 17, 'keep the old cursor identity for release');
+  for (const source of ['startup', 'compact']) {
+    const context = runHook('session-start', { ...input, source }, env).hookSpecificOutput.additionalContext;
+    assert.match(context, /project_name=new\/name/);
+    assert.match(context, /unsubscribe_project with project_id=17/);
+    assert.doesNotMatch(context, /undefined/);
+    assert.match(context, /unknown/);
+    assert.match(context, /subscribe_project with the new project_id/);
+    assert.doesNotMatch(context, /poll_subscriptions/);
+  }
+  trackProject(18, 'new/name');
+  runHook('reqall-track', {
+    ...input, tool_name: 'mcp__Reqall__subscribe_project', tool_input: { project_id: 18, subscriber: input.session_id },
+    tool_response: { ok: true, data: { subscription: { project_id: 18 } } },
+  }, env);
+  assert.match(runHook('user-prompt-submit', { ...input, prompt: 'ok' }, env).hookSpecificOutput.additionalContext, /poll_subscriptions .*project_id=18/);
+  assert.doesNotMatch(runHook('session-start', { ...input, source: 'compact' }, env).hookSpecificOutput.additionalContext, /subscribe_project/);
+});
+
 test('OAuth mode: a later project_name= selection rebinds the subscription instead of polling the old project', () => {
   const data = dataDir();
   const dir = dataDir();
@@ -864,6 +1002,8 @@ test('OAuth mode: a later project_name= selection rebinds the subscription inste
 test('OAuth mode: own-write ids are retired once the model\'s poll has delivered their self events', () => {
   const data = dataDir();
   const env = { CLAUDE_PLUGIN_DATA: data, REQALL_INTENT_INTERVAL_MIN: '0', REQALL_API_KEY: '' };
+  // A pollable subscription needs a verified project identity.
+  runHook('reqall-track', { session_id: 'rt1', tool_name: 'mcp__Reqall__upsert_project', tool_input: { name: 'TestProj' }, tool_response: { ok: true, data: { project: { id: 7, name: 'TestProj' } } } }, env);
   runHook('reqall-track', { session_id: 'rt1', tool_name: 'mcp__Reqall__subscribe_project', tool_input: { project_id: 7 }, tool_response: { ok: true, data: { subscription: { project_id: 7 } } } }, env);
   runHook('reqall-track', { session_id: 'rt1', tool_name: 'mcp__Reqall__upsert_record', tool_input: { kind: 'todo' }, tool_response: { ok: true, data: { record: { id: 555, kind: 'todo', title: 'T' } } } }, env);
   runHook('reqall-track', { session_id: 'rt1', tool_name: 'mcp__Reqall__upsert_record', tool_input: { kind: 'todo' }, tool_response: { ok: true, data: { record: { id: 556, kind: 'todo', title: 'U' } } } }, env);

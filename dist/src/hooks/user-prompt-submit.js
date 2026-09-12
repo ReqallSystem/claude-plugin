@@ -90,7 +90,7 @@ function pollViaModel() {
         return '';
     if (subscriptionStale(st, name)) {
         return (`[reqall] The session's project is now "${name}" but its subscription is bound to ` +
-            `project_id=${st.subscribed_project_id} ("${st.subscribed_project_name}"). Before starting: ` +
+            `project_id=${st.subscribed_project_id} ${st.subscribed_project_name === undefined ? '(name unknown)' : `("${st.subscribed_project_name}")`}. Before starting: ` +
             `upsert_project with EXACTLY name="${name}", unsubscribe_project with ` +
             `project_id=${st.subscribed_project_id} and subscriber="${sessionId}", then subscribe_project ` +
             `with the new project_id and subscriber="${sessionId}", so later turns poll the right project.`);

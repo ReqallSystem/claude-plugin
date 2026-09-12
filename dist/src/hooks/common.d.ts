@@ -22,20 +22,18 @@ export declare function sessionKey(input: HookInput): string;
  * links it parent→ this project on first upsert.
  */
 export declare function machineProjectName(): string;
+/** Parse only a deliberate user label using the canonical policy. */
 export declare function extractProjectHint(text: string | undefined): string | undefined;
 /** Project names are unique case-insensitively server-side; compare the same way. */
 export declare function sameProject(a: string | undefined, b: string | undefined): boolean;
 /**
  * Whether the session's subscription (if any) was bound under a different
  * project than the one now resolved — a later `project_name=` selection in a
- * non-repo session, for instance. Unknown binding names count as current.
+ * non-repo session, for instance. An unknown name must be validated/rebound,
+ * never assumed current; retain its id only so the old cursor can be released.
  */
 export declare function subscriptionStale(st: SessionState, name: string): boolean;
-/**
- * REQALL_PROJECT_NAME > git remote org/repo > labelled `project_name=` from
- * a prompt this session (see UserPromptSubmit) > machine project. Never the
- * cwd basename.
- */
+/** Canonical environment > Git > retained selection > portable metadata/path > machine. */
 export declare function projectName(input: HookInput): string;
 /** Emit additionalContext for the given event and exit 0. */
 export declare function emitContext(eventName: string, context: string): void;
