@@ -96,6 +96,37 @@ test('portable naming: package, workspace boundary, and local origin fallthrough
   assert.match(context(), /project_name=historical Explicit Name:/);
 });
 
+test('portable naming: remote-derived names must satisfy the automatic-name grammar', () => {
+  const dir = dataDir();
+  const cwd = join(dir, 'app');
+  mkdirSync(cwd);
+  writeFileSync(join(cwd, 'package.json'), '{"name":"@acme/fallback"}');
+  const env = { CLAUDE_PLUGIN_DATA: dataDir(), REQALL_PROJECT_NAME: '', REQALL_API_KEY: '', REQALL_WORKSPACE_ROOT: dir };
+  const context = () => runHook('session-start', { session_id: 'grammar', cwd }, env).hookSpecificOutput.additionalContext;
+  assert.equal(spawnSync('git', ['init', '-q', cwd]).status, 0);
+  for (const origin of ['https://host/org/r%C3%A9po.git', 'git@host:org/my repo.git', 'https://host/org/rép.git', 'ssh://git@host/org/re$po.git']) {
+    assert.equal(spawnSync('git', ['-C', cwd, 'remote', origin.startsWith('https://host/org/r%') ? 'add' : 'set-url', 'origin', origin]).status, 0, origin);
+    assert.match(context(), /project_name=acme\/fallback:/, origin);
+  }
+  assert.equal(spawnSync('git', ['-C', cwd, 'remote', 'set-url', 'origin', 'git@host:org/valid_repo.v2.git']).status, 0);
+  assert.match(context(), /project_name=org\/valid_repo\.v2:/);
+});
+
+test('portable naming: conflicting YAML project/name aliases are ambiguous and skipped', () => {
+  const dir = dataDir();
+  const cwd = join(dir, 'app');
+  mkdirSync(cwd);
+  writeFileSync(join(cwd, 'package.json'), '{"name":"@acme/fallback"}');
+  const env = { CLAUDE_PLUGIN_DATA: dataDir(), REQALL_PROJECT_NAME: '', REQALL_API_KEY: '', REQALL_WORKSPACE_ROOT: dir };
+  const context = () => runHook('session-start', { session_id: 'aliases', cwd }, env).hookSpecificOutput.additionalContext;
+  writeFileSync(join(cwd, '.reqall.yml'), 'project: acme/one\nname: acme/two\n');
+  assert.match(context(), /project_name=acme\/fallback:/);
+  writeFileSync(join(cwd, '.reqall.yml'), 'project: acme/same\nname: "acme/same"\n');
+  assert.match(context(), /project_name=acme\/same:/);
+  writeFileSync(join(cwd, '.reqall.yml'), 'name: acme/alias-only\n');
+  assert.match(context(), /project_name=acme\/alias-only:/);
+});
+
 test('portable naming: rebinding invalidates cached project id but retains old cursor for release', () => {
   const cwd = dataDir();
   const data = dataDir();

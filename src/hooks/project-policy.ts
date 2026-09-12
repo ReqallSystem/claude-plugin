@@ -87,6 +87,8 @@ function yamlName(text: string | undefined): string {
     if (values.has(match[1]) && values.get(match[1]) !== value) return '';
     values.set(match[1], value);
   }
+  // `project` and its `name` alias must agree; conflicting values are ambiguous.
+  if (values.has('project') && values.has('name') && values.get('project') !== values.get('name')) return '';
   return values.get('project') || values.get('name') || '';
 }
 
@@ -175,6 +177,8 @@ export function normalizeRemote(remote: string): string {
     path = match[1];
   }
   const parts = path.replace(/^\/+|\/+$/g, '').replace(/\.git$/, '').split('/');
-  if (parts.length < 2 || parts.some(p => !p || p === '.' || p === '..')) return '';
-  return parts.slice(-2).join('/');
+  if (parts.length < 2) return '';
+  // The final candidate must satisfy the automatic-name grammar: escapes, Unicode,
+  // spaces, and other unsupported characters fall through to portable metadata.
+  return safeName(parts.slice(-2).join('/'));
 }
