@@ -702,8 +702,20 @@ test('post-tool treats successful Git bookkeeping as operational, not activity (
   }
   assert.equal(runHook('stop', { session_id: 'g1', stop_hook_active: false }, env), null, 'bookkeeping alone is not activity');
 
-  // Anything the text cannot vouch for stays mutating: failures, other shell
-  // syntax, Git global options and aliases, hook/transport overrides.
+  // A failed call arrives as PostToolUseFailure (Claude Code never sends it
+  // as PostToolUse); it is activity whatever the command, and the injected
+  // context names that event.
+  for (const command of ['git push', 'git add -A && git commit -m x && git push', 'npm run build']) {
+    const out = runHook('post-tool', { session_id: 'g4', hook_event_name: 'PostToolUseFailure', tool_name: 'Bash', tool_input: { command }, error: 'exit 1' }, env);
+    assert.notEqual(out, null, command);
+    assert.equal(out.hookSpecificOutput.hookEventName, 'PostToolUseFailure');
+  }
+  assert.equal(runHook('stop', { session_id: 'g4', stop_hook_active: false }, env).decision, 'block', 'a failed push is activity');
+  assert.notEqual(runHook('post-tool', { session_id: 'g5', hook_event_name: 'PostToolUseFailure', tool_name: 'Edit', tool_input: { file_path: 'a.ts' }, error: 'old_string not found' }, env), null, 'a failed edit is still activity');
+
+  // Anything the text cannot vouch for stays mutating: flagged PostToolUse
+  // payloads, other shell syntax, Git global options and aliases,
+  // hook/transport overrides.
   const conservative = [
     ['git commit -m x', { stdout: '', stderr: 'nothing to commit', interrupted: true }],
     ['git push', { stdout: '', stderr: 'rejected', exit_code: 1 }],

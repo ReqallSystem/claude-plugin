@@ -278,8 +278,9 @@ const BOOKKEEPING_ESCAPE = /--(exec|receive-pack|upload-pack|upload-archive|git-
  * record, so PostToolUse does not count it as session activity (the codex
  * plugin's mitigation for Reqall record 4982). This is a memory-density
  * classification only, never a safety allowlist: anything else stays
- * mutating, and so does a failed or interrupted call — that may be a
- * finding worth persisting.
+ * mutating. Failed calls reach post-tool via PostToolUseFailure, which
+ * never asks this question; the response check below is a second guard for
+ * interrupted or otherwise flagged PostToolUse payloads.
  */
 export function isGitBookkeeping(command: unknown, response: unknown): boolean {
   const cmd = typeof command === 'string' ? command.trim() : '';
@@ -290,9 +291,9 @@ export function isGitBookkeeping(command: unknown, response: unknown): boolean {
 }
 
 /**
- * Claude Code fires PostToolUse only for calls that did not error (failures
- * go to PostToolUseFailure), but be defensive about response shapes that
- * carry an explicit failure signal.
+ * Claude Code delivers errored calls as PostToolUseFailure rather than
+ * PostToolUse (post-tool registers for both), so a PostToolUse response is
+ * normally a success; still honour any explicit failure signal it carries.
  */
 function bashSucceeded(response: unknown): boolean {
   if (response === undefined || response === null) return true;

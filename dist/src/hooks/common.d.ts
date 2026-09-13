@@ -91,8 +91,9 @@ export declare function isMutatingBash(command: unknown): boolean;
  * record, so PostToolUse does not count it as session activity (the codex
  * plugin's mitigation for Reqall record 4982). This is a memory-density
  * classification only, never a safety allowlist: anything else stays
- * mutating, and so does a failed or interrupted call — that may be a
- * finding worth persisting.
+ * mutating. Failed calls reach post-tool via PostToolUseFailure, which
+ * never asks this question; the response check below is a second guard for
+ * interrupted or otherwise flagged PostToolUse payloads.
  */
 export declare function isGitBookkeeping(command: unknown, response: unknown): boolean;
 /**
