@@ -14,7 +14,7 @@
  * Documentation nudges are throttled via REQALL_DOC_INTERVAL_MIN (default 10)
  * so busy sessions are not spammed.
  */
-import { emitContext, intervalEnv, isGitBookkeeping, isMutatingBash, machineProjectName, projectName, readStdin, sessionKey, throttle, touchMarker, } from './common.js';
+import { attributionNote, emitContext, intervalEnv, isGitBookkeeping, isMutatingBash, machineProjectName, projectName, readStdin, sessionKey, throttle, touchMarker, } from './common.js';
 const input = readStdin();
 const sessionId = sessionKey(input);
 const eventName = input.hook_event_name === 'PostToolUseFailure' ? 'PostToolUseFailure' : 'PostToolUse';
@@ -34,7 +34,8 @@ if (mutating) {
             `summary of the work just performed and project_name="${name}". It follows the ` +
             `reqall:document skill and silently skips trivial changes. Routing: ` +
             `machine-specific config/fixes -> "${machineProjectName()}", account-wide ` +
-            `preferences/conventions -> ".user", repo work -> the given project_name.`);
+            `preferences/conventions -> ".user", repo work -> the given project_name. Include ` +
+            `this in the agent prompt verbatim: ${attributionNote(input)}`);
     }
 }
 //# sourceMappingURL=post-tool.js.map

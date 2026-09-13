@@ -16,6 +16,7 @@
  * the next Stop lists them again instead of silently forgetting the work.
  */
 import {
+  attributionNote,
   clearMarker,
   fmtIntent,
   intentContext,
@@ -51,7 +52,8 @@ if (!input.stop_hook_active) {
     `when calling reqall:upsert_project. Create a record for each distinct work item ` +
     `and link related records. Successful git add/commit/push or gh pr create/merge ` +
     `is bookkeeping, not work: never create a record solely for it. If the session was ` +
-    `purely Q&A, bookkeeping, or trivial, state "Nothing to persist." and finish.` +
+    `purely Q&A, bookkeeping, or trivial, state "Nothing to persist." and finish. ` +
+    attributionNote(input) +
     intentContext(intents);
 
   // Intent written this session is persistable work even without file edits;

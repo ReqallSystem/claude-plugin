@@ -3,7 +3,7 @@
  * SessionStart: bootstrap Reqall project context once per session (and again
  * after compaction, where the subscription already exists and is skipped).
  */
-import { apiKey, emitContext, machineProjectName, projectName, readState, readStdin, sessionKey, subscriptionStale } from './common.js';
+import { apiKey, attributionNote, emitContext, machineProjectName, projectName, readState, readStdin, sessionKey, subscriptionStale } from './common.js';
 const input = readStdin();
 const sessionId = sessionKey(input);
 const name = projectName(input);
@@ -32,5 +32,6 @@ emitContext('SessionStart', `[reqall] Invoke the reqall:context skill with proje
     subscribe +
     `Skip impact analysis unless the task changes existing tracked work. ` +
     `Reserved routing: machine-specific config/fixes -> "${machineProjectName()}", ` +
-    `account-wide preferences/conventions -> ".user". session_id="${sessionId}".`);
+    `account-wide preferences/conventions -> ".user". session_id="${sessionId}". ` +
+    attributionNote(input));
 //# sourceMappingURL=session-start.js.map

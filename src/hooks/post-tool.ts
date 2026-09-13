@@ -15,6 +15,7 @@
  * so busy sessions are not spammed.
  */
 import {
+  attributionNote,
   emitContext,
   intervalEnv,
   isGitBookkeeping,
@@ -52,7 +53,8 @@ if (mutating) {
         `summary of the work just performed and project_name="${name}". It follows the ` +
         `reqall:document skill and silently skips trivial changes. Routing: ` +
         `machine-specific config/fixes -> "${machineProjectName()}", account-wide ` +
-        `preferences/conventions -> ".user", repo work -> the given project_name.`,
+        `preferences/conventions -> ".user", repo work -> the given project_name. Include ` +
+        `this in the agent prompt verbatim: ${attributionNote(input)}`,
     );
   }
 }

@@ -46,6 +46,33 @@ export function sessionKey(input: HookInput): string {
 }
 
 /**
+ * Originating-session label for Reqall write attribution:
+ * `claude:<session id>`, coerced to the server grammar (1–128 chars,
+ * `[A-Za-z0-9][A-Za-z0-9._:-]*`). Claude Code keeps one session id across
+ * compaction and resume and subagents inherit it, so the label is stable
+ * for the life of the session. Correlation metadata only — never a
+ * credential, never authorization, and distinct from the subscription
+ * `subscriber` and from the MCP transport session.
+ */
+export function sessionLabel(input: HookInput): string {
+  return `claude:${sessionKey(input).replace(/[^A-Za-z0-9._:-]/g, '-')}`.slice(0, 128);
+}
+
+/**
+ * One-line write-attribution instruction for injected context. The label is
+ * only sent where the tool schema advertises `session_id`; older servers
+ * reject or ignore unknown arguments, so the model must not send it blind.
+ */
+export function attributionNote(input: HookInput): string {
+  return (
+    `Write attribution: on every Reqall write tool call whose schema lists a session_id ` +
+    `argument (upsert_record, upsert_link, delete_record, delete_link, sleep_apply, ` +
+    `merge_projects, ...), pass session_id="${sessionLabel(input)}"; omit it when the schema ` +
+    `has no such argument. This is not the subscriber label.`
+  );
+}
+
+/**
  * The reserved machine project for this box and OS user:
  * `.machine/<hostname>/<os-user>`. REQALL_MACHINE_NAME overrides the hostname
  * segment — set it in CI/containers where hostnames are ephemeral, so runs
@@ -592,6 +619,23 @@ export interface SubscriptionEvent {
   kind?: string;
   title?: string;
   actor?: string;
+  /** Originating plugin session label (attributed servers): a string for this account's labelled writes, null otherwise; absent on older servers. */
+  session_id?: string | null;
+}
+
+/**
+ * Whether a subscription event is this session's own write and may be
+ * suppressed. Attributed servers (the event carries a `session_id` key, see
+ * reqall_net migration 030) allow suppression only when actor=self AND the
+ * non-null label equals ours: a null label (legacy/REST write, or another
+ * account) and any other label — including another session of this account
+ * editing a record this session wrote — must show. Older servers expose no
+ * key at all; there the written-id heuristic remains the best available.
+ */
+export function isOwnEvent(ev: SubscriptionEvent, label: string, ownIds: Set<number>): boolean {
+  if (ev.actor !== 'self') return false;
+  if ('session_id' in ev) return typeof ev.session_id === 'string' && ev.session_id === label;
+  return typeof ev.record_id === 'number' && ownIds.has(ev.record_id);
 }
 
 /**
@@ -627,11 +671,11 @@ export function retireOwnIds(key: string, ids: number[]): void {
 }
 
 /**
- * Render a poll_subscriptions result for injection, or '' when quiet. Events
- * for records this session wrote are dropped; other sessions of the same
- * account still show (actor=self is account-level).
+ * Render a poll_subscriptions result for injection, or '' when quiet. This
+ * session's own writes are dropped (see isOwnEvent); other sessions of the
+ * same account still show (actor=self is account-level).
  */
-export function formatUpdates(data: unknown, ownIds: number[], maxLen = 2500): string {
+export function formatUpdates(data: unknown, ownIds: number[], label: string, maxLen = 2500): string {
   const results = (data as { results?: unknown } | undefined)?.results;
   if (!Array.isArray(results)) return '';
   const own = new Set(ownIds);
@@ -642,7 +686,7 @@ export function formatUpdates(data: unknown, ownIds: number[], maxLen = 2500): s
     const name = String(item.subscription?.project_name ?? item.subscription?.project_id ?? '?');
     for (const ev of item.events ?? []) {
       if (!ev || typeof ev !== 'object') continue;
-      if (typeof ev.record_id === 'number' && own.has(ev.record_id) && ev.actor === 'self') continue;
+      if (isOwnEvent(ev, label, own)) continue;
       const rid = typeof ev.record_id === 'number' ? ` #${ev.record_id}` : '';
       const kind = ev.kind ? ` [${ev.kind}]` : '';
       const who = ev.actor === 'self' ? ' (you, another session)' : '';

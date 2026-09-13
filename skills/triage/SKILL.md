@@ -44,6 +44,18 @@ Reqall record with priority.
 | P3    | Low -- minor issue, cosmetic, nice-to-have                   |
 | P4    | Wishlist -- enhancement idea, future consideration           |
 
+## Session attribution
+
+The hook message carries a write-attribution label of the form
+`session_id="claude:<session id>"`. Pass it as the `session_id` argument on
+every Reqall write tool call whose schema lists that argument —
+`upsert_record`, `upsert_link`, `delete_record`, `delete_link`, `sleep_apply`,
+`merge_projects`, and inline `links` ride along with their `upsert_record`.
+Omit it when the tool schema has no `session_id` argument (older server); never
+send unsupported fields. It is correlation metadata so subscription polls can
+tell this session's writes from another session of the same account: it grants
+nothing, proves nothing, and is not the subscription `subscriber` label.
+
 ## Project identity
 
 Preserve explicit operation arguments (including a SLEEP target). Otherwise the

@@ -15,6 +15,22 @@ export interface HookInput {
 export declare function readStdin(): HookInput;
 export declare function sessionKey(input: HookInput): string;
 /**
+ * Originating-session label for Reqall write attribution:
+ * `claude:<session id>`, coerced to the server grammar (1–128 chars,
+ * `[A-Za-z0-9][A-Za-z0-9._:-]*`). Claude Code keeps one session id across
+ * compaction and resume and subagents inherit it, so the label is stable
+ * for the life of the session. Correlation metadata only — never a
+ * credential, never authorization, and distinct from the subscription
+ * `subscriber` and from the MCP transport session.
+ */
+export declare function sessionLabel(input: HookInput): string;
+/**
+ * One-line write-attribution instruction for injected context. The label is
+ * only sent where the tool schema advertises `session_id`; older servers
+ * reject or ignore unknown arguments, so the model must not send it blind.
+ */
+export declare function attributionNote(input: HookInput): string;
+/**
  * The reserved machine project for this box and OS user:
  * `.machine/<hostname>/<os-user>`. REQALL_MACHINE_NAME overrides the hostname
  * segment — set it in CI/containers where hostnames are ephemeral, so runs
@@ -165,7 +181,19 @@ export interface SubscriptionEvent {
     kind?: string;
     title?: string;
     actor?: string;
+    /** Originating plugin session label (attributed servers): a string for this account's labelled writes, null otherwise; absent on older servers. */
+    session_id?: string | null;
 }
+/**
+ * Whether a subscription event is this session's own write and may be
+ * suppressed. Attributed servers (the event carries a `session_id` key, see
+ * reqall_net migration 030) allow suppression only when actor=self AND the
+ * non-null label equals ours: a null label (legacy/REST write, or another
+ * account) and any other label — including another session of this account
+ * editing a record this session wrote — must show. Older servers expose no
+ * key at all; there the written-id heuristic remains the best available.
+ */
+export declare function isOwnEvent(ev: SubscriptionEvent, label: string, ownIds: Set<number>): boolean;
 /**
  * Own-write ids whose actor=self events a poll has now delivered. Since
  * actor=self is account-level, an id stays filtered only until its own
@@ -179,11 +207,11 @@ export declare function consumedOwnIds(data: unknown, ownIds: number[]): number[
 /** Drop delivered own-write ids from the session state (see consumedOwnIds). */
 export declare function retireOwnIds(key: string, ids: number[]): void;
 /**
- * Render a poll_subscriptions result for injection, or '' when quiet. Events
- * for records this session wrote are dropped; other sessions of the same
- * account still show (actor=self is account-level).
+ * Render a poll_subscriptions result for injection, or '' when quiet. This
+ * session's own writes are dropped (see isOwnEvent); other sessions of the
+ * same account still show (actor=self is account-level).
  */
-export declare function formatUpdates(data: unknown, ownIds: number[], maxLen?: number): string;
+export declare function formatUpdates(data: unknown, ownIds: number[], label: string, maxLen?: number): string;
 /** Project id out of an upsert_project reply (`{action, project: {id}}`). */
 export declare function parseProjectId(data: unknown): number | undefined;
 //# sourceMappingURL=common.d.ts.map
