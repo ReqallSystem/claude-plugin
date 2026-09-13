@@ -85,6 +85,18 @@ export declare function updateState(key: string, mutate: (st: SessionState) => v
 export declare function cleanupSession(key: string): void;
 export declare function isMutatingBash(command: unknown): boolean;
 /**
+ * Whether a *successful* Bash call is routine Git bookkeeping: staging,
+ * committing, pushing, or syncing, alone or chained with `&&`, or opening
+ * and merging a PR. Bookkeeping mutates the repo but is not work worth a
+ * record, so PostToolUse does not count it as session activity (the codex
+ * plugin's mitigation for Reqall record 4982). This is a memory-density
+ * classification only, never a safety allowlist: anything else stays
+ * mutating. Failed calls reach post-tool via PostToolUseFailure, which
+ * never asks this question; the response check below is a second guard for
+ * interrupted or otherwise flagged PostToolUse payloads.
+ */
+export declare function isGitBookkeeping(command: unknown, response: unknown): boolean;
+/**
  * A spec/arch record touched during this session. `written` entries come from
  * upsert_record (the agreed intent the work should satisfy); `consulted` ones
  * from get_record (an existing spec the intend skill selected without editing,

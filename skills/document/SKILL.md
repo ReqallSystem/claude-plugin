@@ -32,6 +32,9 @@ Do **not** create a record if the tool use was:
   command is not completed work, though a useful diagnosis of the failure
   may still merit an `issue` or `info` record
 - A test run that produced no new findings
+- Successful Git bookkeeping — `git add`/`commit`/`push`/`fetch`/`pull` or
+  `gh pr create`/`merge` — for work that is already documented; the hooks do
+  not count it as activity, and neither should you
 - A formatting-only change with no semantic impact
 
 Only document **meaningful** work: file creation, substantive edits,
@@ -51,6 +54,7 @@ build/deploy commands, database migrations, configuration changes, etc.
 | Progress on a larger task (a step, not a standalone deliverable) | work | active |
 | Durable reference note: fact, how-to, convention that fits no other kind | info | active |
 | Trivial / no-op                    | --      | skip     |
+| Git bookkeeping only (commit, push, PR create/merge) | -- | skip |
 
 Most incremental tool activity is **progress**, not a finished deliverable.
 Record it as `work` — and prefer updating the session's existing `work`

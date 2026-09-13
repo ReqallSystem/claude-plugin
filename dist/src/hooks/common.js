@@ -180,17 +180,69 @@ export function cleanupSession(key) {
  * compounds, pipes, redirects, and substitutions count as mutating; only a
  * plain read-only command with no such operators is skipped.
  */
-const READ_ONLY_CMD = /^(ls|pwd|cat|head|tail|echo|which|rg|grep|find|wc|stat|file|tree|env|printenv|type|du|df|less|diff|realpath|dirname|basename|date|whoami|id|uname|node\s+--version|npm\s+(ls|list|view|outdated))\b|^git\s+(status|diff|log|show|branch|remote|rev-parse|blame|describe|tag)\b/;
+const READ_ONLY_CMD = /^(ls|pwd|cat|head|tail|echo|which|rg|grep|find|wc|stat|file|tree|env|printenv|type|du|df|less|diff|realpath|dirname|basename|date|whoami|id|uname|node\s+--version|npm\s+(ls|list|view|outdated))\b|^git\s+(status|diff|log|show|branch|remote|rev-parse|blame|describe|tag|ls-files|cat-file|ls-tree|name-rev|shortlog|worktree\s+list|submodule\s+status|config\s+(--get|--get-all|--get-regexp|--list|-l)\b)\b|^gh\s+(pr\s+(view|checks|status|list|diff)|issue\s+(view|list|status)|run\s+(view|list|watch)|release\s+(view|list)|repo\s+view|auth\s+status)\b/;
+/** Shell control syntax that makes a command's effect impossible to classify from its text. */
+const SHELL_CONTROL = /[;|&<>`$\n]/;
 export function isMutatingBash(command) {
     const cmd = typeof command === 'string' ? command.trim() : '';
     if (!cmd)
         return false;
-    if (/[;|&<>`$\n]/.test(cmd) || /--output\b/.test(cmd))
+    if (SHELL_CONTROL.test(cmd) || /--output\b/.test(cmd))
         return true;
     // find can delete, run commands, or write files through its own actions.
     if (/^find\b/.test(cmd) && /\s-(delete|exec|execdir|ok|okdir|fprint0?|fprintf|fls)\b/.test(cmd))
         return true;
     return !READ_ONLY_CMD.test(cmd);
+}
+/**
+ * One plain Git/GitHub bookkeeping command: `git add|commit|push|fetch|pull`
+ * or `gh pr create|merge`, with no Git global options, aliases, or hooks
+ * smuggled through flags. Aliases and `git -C`/`-c`/`--no-pager` stay
+ * unclassified on purpose, as do `$`, backslashes, and further shell syntax.
+ */
+const BOOKKEEPING_SEGMENT = /^(git\s+(add|commit|push|fetch|pull)|gh\s+pr\s+(create|merge))(\s|$)/;
+const BOOKKEEPING_ESCAPE = /--(exec|receive-pack|upload-pack|upload-archive|git-dir|work-tree)(=|\s|$)|[$\\]/;
+/**
+ * Whether a *successful* Bash call is routine Git bookkeeping: staging,
+ * committing, pushing, or syncing, alone or chained with `&&`, or opening
+ * and merging a PR. Bookkeeping mutates the repo but is not work worth a
+ * record, so PostToolUse does not count it as session activity (the codex
+ * plugin's mitigation for Reqall record 4982). This is a memory-density
+ * classification only, never a safety allowlist: anything else stays
+ * mutating. Failed calls reach post-tool via PostToolUseFailure, which
+ * never asks this question; the response check below is a second guard for
+ * interrupted or otherwise flagged PostToolUse payloads.
+ */
+export function isGitBookkeeping(command, response) {
+    const cmd = typeof command === 'string' ? command.trim() : '';
+    if (!cmd || !bashSucceeded(response))
+        return false;
+    if (/[;|<>`\n]/.test(cmd) || /\|\|/.test(cmd) || BOOKKEEPING_ESCAPE.test(cmd))
+        return false;
+    const segments = cmd.split('&&').map((s) => s.trim());
+    return segments.every((s) => s.length > 0 && !s.includes('&') && BOOKKEEPING_SEGMENT.test(s));
+}
+/**
+ * Claude Code delivers errored calls as PostToolUseFailure rather than
+ * PostToolUse (post-tool registers for both), so a PostToolUse response is
+ * normally a success; still honour any explicit failure signal it carries.
+ */
+function bashSucceeded(response) {
+    if (response === undefined || response === null)
+        return true;
+    if (typeof response !== 'object')
+        return true;
+    const r = response;
+    if (r.interrupted === true || r.is_error === true || r.isError === true)
+        return false;
+    if (typeof r.error === 'string' && r.error.length > 0)
+        return false;
+    for (const key of ['exit_code', 'exitCode', 'code', 'status']) {
+        const v = r[key];
+        if (typeof v === 'number' && v !== 0)
+            return false;
+    }
+    return true;
 }
 const INTENT_KINDS = new Set(['spec', 'arch']);
 const MAX_CONSULTED = 8;
