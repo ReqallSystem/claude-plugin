@@ -17,7 +17,9 @@ const subscribe = apiKey()
     ? ''
     : stale
         ? `(4) unsubscribe_project with project_id=${st.subscribed_project_id} and subscriber="${sessionId}" ` +
-            `(bound to "${st.subscribed_project_name}", no longer this session's project), then subscribe_project ` +
+            (st.subscribed_project_name === undefined
+                ? `(project name unknown), then subscribe_project `
+                : `(bound to "${st.subscribed_project_name}", no longer this session's project), then subscribe_project `) +
             `with the new project_id and subscriber="${sessionId}" so later turns poll the right project. `
         : st.subscribed_project_id !== undefined
             ? ''
