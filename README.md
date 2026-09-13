@@ -114,8 +114,8 @@ subscribes to its bound project once, with `subscriber` set to the Claude
 Code session id so every session keeps its own cursor, and polls at the
 start of each prompt. Changes by other sessions, teammates, or SLEEP arrive
 as `## Reqall updates since last turn`; the session's own writes are
-omitted; a quiet poll adds nothing; a server that predates the tools is
-detected once and left alone.
+omitted (see *Session attribution* below); a quiet poll adds nothing; a
+server that predates the tools is detected once and left alone.
 
 - **OAuth sessions (default):** the `reqall:context` skill creates the
   subscription and the `UserPromptSubmit` hook asks the model to call
@@ -127,6 +127,33 @@ detected once and left alone.
 
 `REQALL_POLL_INTERVAL_MIN` throttles polling in both modes; the default
 `0` polls every prompt. Slash commands never poll.
+
+### Session attribution
+
+Every hook message that can lead to a write — SessionStart, the
+UserPromptSubmit intent nudge, the accepted-plan hook, the PostToolUse
+documenter nudge, PreCompact and Stop — carries the label
+`session_id="claude:<Claude Code session id>"`, and every write skill
+(context, intend, document, persist, review, triage, sleep) and the
+documenter agent pass it as the `session_id` argument on each write tool
+whose schema lists it (`upsert_record`, `upsert_link`, `delete_*`,
+`sleep_apply`, `merge_projects`). Slash-invoked skills such as `/reqall:sleep`
+take the label from the SessionStart message already in context.
+Servers from reqall_net migration 030 onward store it on every project event
+the call produces and return it to same-account readers on polls. The label is
+stable across compaction and resume and is inherited by subagents; it is
+correlation metadata only — never a credential, never authorization, and not
+the subscription `subscriber`.
+
+Own-write suppression follows the server contract: an event is dropped only
+when `actor=self` **and** its non-null `session_id` equals this session's
+label. A null label (a legacy or REST write, or another account) and any other
+label — including another session of the same account editing a record this
+session wrote — always show. Against an older server whose events carry no
+`session_id` field, the previous heuristic still applies: `actor=self` events
+for records this session wrote are dropped until their events have been
+delivered once. Older servers whose write schemas lack the argument are simply
+not sent it.
 
 ### Skills
 

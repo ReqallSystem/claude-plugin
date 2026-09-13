@@ -27,6 +27,18 @@ allowed-tools:
 
 Load project context from Reqall before starting work.
 
+## Session attribution
+
+The hook message carries a write-attribution label of the form
+`session_id="claude:<session id>"`. Pass it as the `session_id` argument on
+every Reqall write tool call whose schema lists that argument —
+`upsert_record`, `upsert_link`, `delete_record`, `delete_link`, `sleep_apply`,
+`merge_projects`, and inline `links` ride along with their `upsert_record`.
+Omit it when the tool schema has no `session_id` argument (older server); never
+send unsupported fields. It is correlation metadata so subscription polls can
+tell this session's writes from another session of the same account: it grants
+nothing, proves nothing, and is not the subscription `subscriber` label.
+
 ## Project identity
 
 Preserve explicit operation arguments (including a SLEEP target). Otherwise the
@@ -128,10 +140,14 @@ Each later prompt, the UserPromptSubmit hook either injects
 `## Reqall updates since last turn` (API-key mode: the hook polled) or asks
 you to call `reqall:poll_subscriptions` with `subscriber=<session_id>` and
 the project id (OAuth mode). Events are records changed by other sessions,
-teammates, or SLEEP; treat them as background context, fetch with
-`reqall:get_record` before relying on one, and skip `actor=self` events for
-records this session wrote. `reqall:list_subscriptions` shows pending
-counts; during a long task, `poll_subscriptions` again to drain more.
+teammates, or SLEEP; treat them as background context and fetch with
+`reqall:get_record` before relying on one. Suppress an event only when
+`actor=self` **and** its `session_id` equals this session's attribution label
+(see above); keep events with a null or different label, including another
+session's edits to records this session wrote. Only when events carry no
+`session_id` field at all (older server) fall back to skipping `actor=self`
+events for records this session wrote. `reqall:list_subscriptions` shows
+pending counts; during a long task, `poll_subscriptions` again to drain more.
 
 ## Automatic Per-File Search
 

@@ -1126,3 +1126,110 @@ test('OAuth mode: own-write ids are retired once the model\'s poll has delivered
   ctx = runHook('user-prompt-submit', { session_id: 'rt1', prompt: 'ok' }, env).hookSpecificOutput.additionalContext;
   assert.doesNotMatch(ctx, /#556/, 'retired on first sight even with has_more');
 });
+
+test('session attribution: hooks name a sanitized claude:<session> label for writes, distinct from the subscriber', () => {
+  const data = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_API_KEY: '', REQALL_PERSIST_INTERVAL_MIN: '0', REQALL_IDLE_PERSIST_INTERVAL_MIN: '0', REQALL_INTENT_INTERVAL_MIN: '0', REQALL_DOC_INTERVAL_MIN: '0' };
+  const start = runHook('session-start', { session_id: 'sa1', cwd: root }, env).hookSpecificOutput.additionalContext;
+  assert.match(start, /subscriber="sa1"/, 'subscriber stays the raw session id');
+  assert.match(start, /whose schema lists a session_id argument .*pass session_id="claude:sa1"; omit it when the schema has no such argument/);
+  assert.match(start, /not the subscriber label/);
+
+  // Unsupported characters are coerced to the server grammar; the prefix keeps the first char alphanumeric.
+  const odd = runHook('session-start', { session_id: 'a b/c@d', cwd: root }, env).hookSpecificOutput.additionalContext;
+  assert.match(odd, /session_id="claude:a-b-c-d"/);
+  const none = runHook('session-start', { cwd: root }, env).hookSpecificOutput.additionalContext;
+  assert.match(none, /session_id="claude:global"/);
+
+  const nudge = runHook('user-prompt-submit', { session_id: 'sa1', prompt: 'please implement the widget and add tests for it' }, env).hookSpecificOutput.additionalContext;
+  assert.match(nudge, /reqall:intend/);
+  assert.match(nudge, /session_id="claude:sa1"/);
+
+  const doc = runHook('post-tool', { session_id: 'sa1', tool_name: 'Edit', tool_input: { file_path: 'a.ts' } }, env).hookSpecificOutput.additionalContext;
+  assert.match(doc, /reqall-documenter/);
+  assert.match(doc, /Include this in the agent prompt verbatim: Write attribution: .*session_id="claude:sa1"/);
+
+  const compact = runHook('pre-compact', { session_id: 'sa1', trigger: 'auto' }, env).hookSpecificOutput.additionalContext;
+  assert.match(compact, /session_id="claude:sa1"/);
+
+  const plan = runHook('plan-accepted', { session_id: 'sa1', tool_name: 'ExitPlanMode', tool_input: {}, tool_response: {} }, env).hookSpecificOutput.additionalContext;
+  assert.match(plan, /reqall:intend/);
+  assert.match(plan, /session_id="claude:sa1"/, 'an accepted plan leads straight to a write');
+
+  const stop = runHook('stop', { session_id: 'sa1', stop_hook_active: false }, env);
+  assert.equal(stop.decision, 'block');
+  assert.match(stop.reason, /session_id="claude:sa1"/);
+});
+
+test('session attribution: every skill or agent that can write to Reqall documents the label', () => {
+  const writeTools = /mcp__(?:plugin_reqall_reqall|Reqall)__(?:upsert_record|upsert_link|delete_record|delete_link|delete_project|sleep_apply|merge_projects)/;
+  const files = [
+    ...readdirSync(join(root, 'skills')).map((d) => join('skills', d, 'SKILL.md')),
+    ...readdirSync(join(root, 'agents')).map((f) => join('agents', f)),
+  ];
+  const writers = files.filter((f) => writeTools.test(readFileSync(join(root, f), 'utf-8')));
+  assert.ok(writers.length >= 7, `expected the write skills and agent, found ${writers.join(', ')}`);
+  for (const f of writers) {
+    assert.match(readFileSync(join(root, f), 'utf-8'), /## Session attribution/, f);
+  }
+});
+
+test('OAuth mode: the poll instruction suppresses only own-label self events and falls back to own ids on older servers', () => {
+  const data = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_INTENT_INTERVAL_MIN: '0', REQALL_API_KEY: '' };
+  runHook('reqall-track', { session_id: 'sa2', tool_name: 'mcp__Reqall__upsert_project', tool_input: { name: 'TestProj' }, tool_response: { ok: true, data: { action: 'created_or_found', project: { id: 1286, name: 'TestProj' } } } }, env);
+  runHook('reqall-track', { session_id: 'sa2', tool_name: 'mcp__Reqall__subscribe_project', tool_input: { project_id: 1286, subscriber: 'sa2' }, tool_response: { ok: true, data: { action: 'created', subscription: { id: 3, project_id: 1286, subscriber: 'sa2', cursor: 74 } } } }, env);
+  runHook('reqall-track', { session_id: 'sa2', tool_name: 'mcp__Reqall__upsert_record', tool_input: { kind: 'todo', session_id: 'claude:sa2' }, tool_response: { ok: true, data: { record: { id: 555, kind: 'todo', title: 'T' } } } }, env);
+  const ctx = runHook('user-prompt-submit', { session_id: 'sa2', prompt: 'ok' }, env).hookSpecificOutput.additionalContext;
+  assert.match(ctx, /poll_subscriptions .*subscriber="sa2"/);
+  assert.match(ctx, /Suppress an event only when actor=self AND its session_id equals "claude:sa2"/);
+  assert.match(ctx, /no session_id field at all \(older server\), skip actor=self events for records #555 instead/);
+  assert.match(ctx, /Keep null or other labels/);
+});
+
+test('API-key mode: attributed events hide only this session\'s label; null, other labels, and other sessions\' edits to own records show', async () => {
+  const data = dataDir();
+  const calls = [];
+  let events = [];
+  const { server, url } = await mockServer(
+    {
+      upsert_project: (a) => ({ action: 'created_or_found', project: { id: 1286, name: a.name } }),
+      subscribe_project: (a) => ({ action: 'created', subscription: { project_id: a.project_id, subscriber: a.subscriber, cursor: 74 } }),
+      poll_subscriptions: () => poll(events),
+      unsubscribe_project: () => ({ removed: 1 }),
+    },
+    calls,
+  );
+  try {
+    const env = { CLAUDE_PLUGIN_DATA: data, REQALL_API_KEY: 'rq_test', REQALL_URL: url, REQALL_INTENT_INTERVAL_MIN: '0' };
+    await runHookAsync('user-prompt-submit', { session_id: 'k9', prompt: 'implement the widget and its tests' }, env);
+    // The heuristic would hide every self event on #5; attribution must not.
+    runHook('reqall-track', { session_id: 'k9', tool_name: 'mcp__Reqall__upsert_record', tool_input: { kind: 'todo', session_id: 'claude:k9' }, tool_response: { ok: true, data: { record: { id: 5, kind: 'todo', title: 'Mine' } } } }, env);
+    events = [
+      ev('record.created', 5, { actor: 'self', session_id: 'claude:k9', title: 'My own write' }),
+      ev('record.updated', 5, { actor: 'self', session_id: 'claude:other-session', title: 'Same account, another Claude session, my record' }),
+      ev('record.updated', 5, { actor: 'self', session_id: 'hermes:abc', title: 'Same account via Hermes' }),
+      ev('record.updated', 5, { actor: 'self', session_id: null, title: 'Unattributed same-account write' }),
+      ev('record.updated', 6, { actor: 'other', session_id: null, title: 'Teammate change' }),
+      ev('record.updated', 7, { actor: 'other', session_id: 'claude:k9', title: 'Never trust the label without actor=self' }),
+    ];
+    const out = await runHookAsync('user-prompt-submit', { session_id: 'k9', prompt: 'thanks, continue' }, env);
+    const ctx = out.hookSpecificOutput.additionalContext;
+    assert.doesNotMatch(ctx, /My own write/);
+    assert.match(ctx, /#5 \[todo\] \(you, another session\): Same account, another Claude session, my record/);
+    assert.match(ctx, /\(you, another session\): Same account via Hermes/);
+    assert.match(ctx, /\(you, another session\): Unattributed same-account write/);
+    assert.match(ctx, /#6 \[todo\]: Teammate change/);
+    assert.match(ctx, /#7 \[todo\]: Never trust the label without actor=self/);
+
+    // Legacy shape (no session_id key) on the same server keeps the written-id heuristic.
+    runHook('reqall-track', { session_id: 'k9', tool_name: 'mcp__Reqall__upsert_record', tool_input: { id: 8 }, tool_response: { ok: true, data: { record: { id: 8, kind: 'todo', title: 'Mine too' } } } }, env);
+    events = [ev('record.updated', 8, { actor: 'self', title: 'Legacy own write' }), ev('record.updated', 9, { actor: 'self', title: 'Legacy other session' })];
+    const legacy = await runHookAsync('user-prompt-submit', { session_id: 'k9', prompt: 'thanks, continue' }, env);
+    const lctx = legacy.hookSpecificOutput.additionalContext;
+    assert.doesNotMatch(lctx, /Legacy own write/);
+    assert.match(lctx, /#9 \[todo\] \(you, another session\): Legacy other session/);
+  } finally {
+    server.close();
+  }
+});

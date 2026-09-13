@@ -15,7 +15,7 @@
  * intents re-block once more, naming them; after that they stay on file so
  * the next Stop lists them again instead of silently forgetting the work.
  */
-import { clearMarker, fmtIntent, intentContext, intervalEnv, isWritten, projectName, readIntents, readMarker, readState, readStdin, sessionKey, throttle, updateState, writeIntents, } from './common.js';
+import { attributionNote, clearMarker, fmtIntent, intentContext, intervalEnv, isWritten, projectName, readIntents, readMarker, readState, readStdin, sessionKey, throttle, updateState, writeIntents, } from './common.js';
 const input = readStdin();
 const sessionId = sessionKey(input);
 const activityKey = `activity-${sessionId}`;
@@ -32,7 +32,8 @@ if (!input.stop_hook_active) {
         `when calling reqall:upsert_project. Create a record for each distinct work item ` +
         `and link related records. Successful git add/commit/push or gh pr create/merge ` +
         `is bookkeeping, not work: never create a record solely for it. If the session was ` +
-        `purely Q&A, bookkeeping, or trivial, state "Nothing to persist." and finish.` +
+        `purely Q&A, bookkeeping, or trivial, state "Nothing to persist." and finish. ` +
+        attributionNote(input) +
         intentContext(intents);
     // Intent written this session is persistable work even without file edits;
     // merely consulting existing specs is not.
