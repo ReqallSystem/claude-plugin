@@ -130,10 +130,15 @@ server that predates the tools is detected once and left alone.
 
 ### Session attribution
 
-Every hook message that can lead to a write carries the label
-`session_id="claude:<Claude Code session id>"`, and the skills pass it as the
-`session_id` argument on each write tool whose schema lists it
-(`upsert_record`, `upsert_link`, `delete_*`, `sleep_apply`, `merge_projects`).
+Every hook message that can lead to a write — SessionStart, the
+UserPromptSubmit intent nudge, the accepted-plan hook, the PostToolUse
+documenter nudge, PreCompact and Stop — carries the label
+`session_id="claude:<Claude Code session id>"`, and every write skill
+(context, intend, document, persist, review, triage, sleep) and the
+documenter agent pass it as the `session_id` argument on each write tool
+whose schema lists it (`upsert_record`, `upsert_link`, `delete_*`,
+`sleep_apply`, `merge_projects`). Slash-invoked skills such as `/reqall:sleep`
+take the label from the SessionStart message already in context.
 Servers from reqall_net migration 030 onward store it on every project event
 the call produces and return it to same-account readers on polls. The label is
 stable across compaction and resume and is inherited by subagents; it is

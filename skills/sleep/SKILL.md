@@ -42,6 +42,19 @@ consolidate or split.
 
 Prefer clear, concise records and useful links over perfect coverage. A long but appropriate record can wait for a later sleep.
 
+## Session attribution
+
+The SessionStart hook message carries a write-attribution label of the form
+`session_id="claude:<session id>"`; it is also present on every later hook
+message that can lead to a write, so it survives compaction. Pass it as the
+`session_id` argument on `reqall:sleep_apply` when the tool schema lists that
+argument — every consolidate, split, promote, and delete event the batch
+produces then carries this session's origin, so its own subscription polls can
+tell them from another session's. Omit it when the schema has no `session_id`
+argument (older server); never send unsupported fields. It is correlation
+metadata only: it grants nothing, proves nothing, and is not the subscription
+`subscriber` label.
+
 ## Project identity
 
 Preserve explicit operation arguments (including a SLEEP target). Otherwise the

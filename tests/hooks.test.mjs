@@ -1152,9 +1152,26 @@ test('session attribution: hooks name a sanitized claude:<session> label for wri
   const compact = runHook('pre-compact', { session_id: 'sa1', trigger: 'auto' }, env).hookSpecificOutput.additionalContext;
   assert.match(compact, /session_id="claude:sa1"/);
 
+  const plan = runHook('plan-accepted', { session_id: 'sa1', tool_name: 'ExitPlanMode', tool_input: {}, tool_response: {} }, env).hookSpecificOutput.additionalContext;
+  assert.match(plan, /reqall:intend/);
+  assert.match(plan, /session_id="claude:sa1"/, 'an accepted plan leads straight to a write');
+
   const stop = runHook('stop', { session_id: 'sa1', stop_hook_active: false }, env);
   assert.equal(stop.decision, 'block');
   assert.match(stop.reason, /session_id="claude:sa1"/);
+});
+
+test('session attribution: every skill or agent that can write to Reqall documents the label', () => {
+  const writeTools = /mcp__(?:plugin_reqall_reqall|Reqall)__(?:upsert_record|upsert_link|delete_record|delete_link|delete_project|sleep_apply|merge_projects)/;
+  const files = [
+    ...readdirSync(join(root, 'skills')).map((d) => join('skills', d, 'SKILL.md')),
+    ...readdirSync(join(root, 'agents')).map((f) => join('agents', f)),
+  ];
+  const writers = files.filter((f) => writeTools.test(readFileSync(join(root, f), 'utf-8')));
+  assert.ok(writers.length >= 7, `expected the write skills and agent, found ${writers.join(', ')}`);
+  for (const f of writers) {
+    assert.match(readFileSync(join(root, f), 'utf-8'), /## Session attribution/, f);
+  }
 });
 
 test('OAuth mode: the poll instruction suppresses only own-label self events and falls back to own ids on older servers', () => {
