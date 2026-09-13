@@ -49,8 +49,9 @@ if (!input.stop_hook_active) {
     `[reqall] Before completing this turn, invoke the reqall:persist skill to ` +
     `classify and persist the work done in this session. Use project_name="${name}" ` +
     `when calling reqall:upsert_project. Create a record for each distinct work item ` +
-    `and link related records. If the session was purely Q&A or trivial, state ` +
-    `"Nothing to persist." and finish.` +
+    `and link related records. Successful git add/commit/push or gh pr create/merge ` +
+    `is bookkeeping, not work: never create a record solely for it. If the session was ` +
+    `purely Q&A, bookkeeping, or trivial, state "Nothing to persist." and finish.` +
     intentContext(intents);
 
   // Intent written this session is persistable work even without file edits;

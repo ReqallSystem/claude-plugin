@@ -5,14 +5,19 @@
  *
  * Only mutating work counts: file edits always, Bash only when the command
  * can plausibly write (see isMutatingBash). A `git status` or `ls` must not
- * push a chat session onto the active persist cadence.
+ * push a chat session onto the active persist cadence, and neither must
+ * successful Git bookkeeping — `git add`/`commit`/`push`, `gh pr merge` —
+ * that follows work already counted (see isGitBookkeeping).
  * Documentation nudges are throttled via REQALL_DOC_INTERVAL_MIN (default 10)
  * so busy sessions are not spammed.
  */
-import { emitContext, intervalEnv, isMutatingBash, machineProjectName, projectName, readStdin, sessionKey, throttle, touchMarker, } from './common.js';
+import { emitContext, intervalEnv, isGitBookkeeping, isMutatingBash, machineProjectName, projectName, readStdin, sessionKey, throttle, touchMarker, } from './common.js';
 const input = readStdin();
 const sessionId = sessionKey(input);
-const mutating = input.tool_name === 'Bash' ? isMutatingBash(input.tool_input?.command) : true;
+const command = input.tool_input?.command;
+const mutating = input.tool_name === 'Bash'
+    ? isMutatingBash(command) && !isGitBookkeeping(command, input.tool_response)
+    : true;
 if (mutating) {
     // The Stop hook uses this marker to pick a persist cadence for the session.
     touchMarker(`activity-${sessionId}`);

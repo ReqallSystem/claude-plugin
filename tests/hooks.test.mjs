@@ -674,10 +674,68 @@ test('post-tool ignores read-only Bash commands but counts mutating ones', () =>
     assert.equal(runHook('post-tool', { session_id: 'b1', tool_name: 'Bash', tool_input: { command } }, env), null, command);
   }
   assert.equal(runHook('stop', { session_id: 'b1', stop_hook_active: false }, env), null, 'read-only shell is not activity');
-  for (const command of ['npm run build', 'git commit -m x', 'cat a > b', 'ls && rm -rf dist', 'echo $(date) | tee log', 'find . -name "*.tmp" -delete', 'find src -type f -exec chmod +x {} +']) {
+  for (const command of ['npm run build', 'git merge feat/x', 'cat a > b', 'ls && rm -rf dist', 'echo $(date) | tee log', 'find . -name "*.tmp" -delete', 'find src -type f -exec chmod +x {} +']) {
     assert.notEqual(runHook('post-tool', { session_id: 'b2', tool_name: 'Bash', tool_input: { command } }, env), null, command);
   }
   assert.equal(runHook('stop', { session_id: 'b2', stop_hook_active: false }, env).decision, 'block');
+});
+
+test('post-tool treats successful Git bookkeeping as operational, not activity (record 4982)', () => {
+  const data = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_DOC_INTERVAL_MIN: '0', REQALL_PERSIST_INTERVAL_MIN: '0', REQALL_IDLE_PERSIST_INTERVAL_MIN: '0' };
+  const ok = { stdout: '', stderr: '', interrupted: false };
+  const bookkeeping = [
+    'git add -A',
+    'git commit -m "Address review findings"',
+    'git push -u origin feat/x',
+    'git fetch --all --prune',
+    'git pull --ff-only origin main',
+    'git add -A && git commit -m "chore: bump" && git push',
+    'gh pr create --fill',
+    'gh pr merge 14 --merge --delete-branch',
+  ];
+  for (const command of bookkeeping) {
+    assert.equal(runHook('post-tool', { session_id: 'g1', tool_name: 'Bash', tool_input: { command }, tool_response: ok }, env), null, command);
+  }
+  for (const command of ['gh pr view 14 --json state', 'gh pr checks 14', 'git ls-files src', 'git config --get remote.origin.url', 'git worktree list']) {
+    assert.equal(runHook('post-tool', { session_id: 'g1', tool_name: 'Bash', tool_input: { command }, tool_response: ok }, env), null, command);
+  }
+  assert.equal(runHook('stop', { session_id: 'g1', stop_hook_active: false }, env), null, 'bookkeeping alone is not activity');
+
+  // Anything the text cannot vouch for stays mutating: failures, other shell
+  // syntax, Git global options and aliases, hook/transport overrides.
+  const conservative = [
+    ['git commit -m x', { stdout: '', stderr: 'nothing to commit', interrupted: true }],
+    ['git push', { stdout: '', stderr: 'rejected', exit_code: 1 }],
+    ['git add -A; git commit -m x', ok],
+    ['git add -A && npm test', ok],
+    ['git commit -m x || echo failed', ok],
+    ['git push 2>&1', ok],
+    ['git commit -m "$(date)"', ok],
+    ['git -C ../other push', ok],
+    ['git --no-pager commit -m x', ok],
+    ['git -c core.hooksPath=/tmp/h commit -m x', ok],
+    ['git push --receive-pack=/tmp/evil origin main', ok],
+    ['git cm x', ok],
+    ['git merge feat/x', ok],
+    ['git rebase main', ok],
+    ['git stash', ok],
+    ['gh pr edit 14 --title x', ok],
+    ['gh api -X DELETE repos/o/r', ok],
+  ];
+  for (const [command, tool_response] of conservative) {
+    assert.notEqual(runHook('post-tool', { session_id: 'g2', tool_name: 'Bash', tool_input: { command }, tool_response }, env), null, command);
+  }
+  assert.equal(runHook('stop', { session_id: 'g2', stop_hook_active: false }, env).decision, 'block');
+});
+
+test('stop persist reason tells the model bookkeeping alone is nothing to persist', () => {
+  const data = dataDir();
+  const env = { CLAUDE_PLUGIN_DATA: data, REQALL_PERSIST_INTERVAL_MIN: '0', REQALL_IDLE_PERSIST_INTERVAL_MIN: '0' };
+  runHook('post-tool', { session_id: 'g3', tool_name: 'Edit', tool_input: { file_path: 'a.ts' } }, env);
+  const out = runHook('stop', { session_id: 'g3', stop_hook_active: false }, env);
+  assert.equal(out.decision, 'block');
+  assert.match(out.reason, /bookkeeping, not work: never create a record solely for it/);
 });
 
 test('reqall-track remembers upsert_project and subscribe_project; user-prompt-submit then asks the model to poll', () => {

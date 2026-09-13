@@ -39,6 +39,7 @@ produce multiple artifacts worth tracking.
 | Session progress log: what was done, in what order, against which intent | work | resolved (or `active` if the task continues next session) |
 | Durable reference note: fact, how-to, convention that fits no other kind | info | active |
 | Trivial / Q&A / unclassifiable     | --      | skip     |
+| Git bookkeeping only (`git add`/`commit`/`push`, `gh pr create`/`merge`) | -- | skip |
 
 Prefer **one `work` record per session** over a pile of `todo/resolved`
 records for finished steps. Work records are ephemeral: SLEEP later promotes
@@ -202,3 +203,8 @@ successful transport response as persistence.
 
 If the session was purely Q&A, informational, or trivial (no code changes,
 no decisions made), do not create any records. Say "Nothing to persist."
+The same applies to a turn that only committed, pushed, or merged work that
+was already persisted: successful Git bookkeeping is operational evidence,
+not a work item, and never warrants a record of its own. Substantive edits,
+findings, test results, and open commitments still need persisting, as does
+a failed or surprising Git operation worth a diagnosis.
