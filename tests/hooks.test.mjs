@@ -112,14 +112,17 @@ test('portable naming: remote-derived names must satisfy the automatic-name gram
   assert.match(context(), /project_name=org\/valid_repo\.v2:/);
 });
 
-test('portable naming: conflicting YAML project/name aliases are ambiguous and skipped', () => {
+test('portable naming: YAML project takes precedence over its name alias', () => {
   const dir = dataDir();
   const cwd = join(dir, 'app');
   mkdirSync(cwd);
   writeFileSync(join(cwd, 'package.json'), '{"name":"@acme/fallback"}');
   const env = { CLAUDE_PLUGIN_DATA: dataDir(), REQALL_PROJECT_NAME: '', REQALL_API_KEY: '', REQALL_WORKSPACE_ROOT: dir };
   const context = () => runHook('session-start', { session_id: 'aliases', cwd }, env).hookSpecificOutput.additionalContext;
+  // PROJECT_NAMING contract (fixture yaml-project-priority): a valid `project` wins.
   writeFileSync(join(cwd, '.reqall.yml'), 'project: acme/one\nname: acme/two\n');
+  assert.match(context(), /project_name=acme\/one:/);
+  writeFileSync(join(cwd, '.reqall.yml'), 'project: acme/one\nproject: acme/two\n');
   assert.match(context(), /project_name=acme\/fallback:/);
   writeFileSync(join(cwd, '.reqall.yml'), 'project: acme/same\nname: "acme/same"\n');
   assert.match(context(), /project_name=acme\/same:/);

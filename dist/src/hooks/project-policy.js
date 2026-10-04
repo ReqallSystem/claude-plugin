@@ -111,9 +111,6 @@ function yamlName(text) {
             return '';
         values.set(match[1], value);
     }
-    // `project` and its `name` alias must agree; conflicting values are ambiguous.
-    if (values.has('project') && values.has('name') && values.get('project') !== values.get('name'))
-        return '';
     return values.get('project') || values.get('name') || '';
 }
 function packageName(dir, boundary) {
@@ -133,7 +130,8 @@ function packageName(dir, boundary) {
     if (go !== undefined) {
         const declarations = go.replace(/\/\*[\s\S]*?\*\//g, ' ').split(/\r?\n/).filter(l => /^\s*module\b/.test(l));
         if (declarations.length === 1) {
-            const match = declarations[0].match(/^\s*module\s+(?:"([^"\\]+)"|`([^`]+)`|([^\s"`]+))\s*(?:\/\/.*)?$/);
+            // Like Go's modfile lexer, an unquoted module path ends at an adjacent `//` comment.
+            const match = declarations[0].match(/^\s*module\s+(?:"([^"\\]+)"|`([^`]+)`|((?:(?!\/\/)[^\s"`])+))\s*(?:\/\/.*)?$/);
             const valid = match && safeName(match[1] ?? match[2] ?? match[3]);
             if (valid)
                 return valid;
@@ -250,10 +248,11 @@ export function normalizeRemote(remote) {
         path = match[1];
     }
     const parts = path.replace(/^\/+|\/+$/g, '').replace(/\.git$/, '').split('/');
-    if (parts.length < 2)
+    if (parts.length < 2 || parts.some(p => !p || p === '.' || p === '..'))
         return '';
-    // The final candidate must satisfy the automatic-name grammar: escapes, Unicode,
-    // spaces, and other unsupported characters fall through to portable metadata.
-    return safeName(parts.slice(-2).join('/'));
+    // The final candidate must satisfy the automatic-name grammar untrimmed: escapes,
+    // Unicode, spaces, and other unsupported characters fall through to portable metadata.
+    const name = parts.slice(-2).join('/');
+    return safeName(name) === name ? name : '';
 }
 //# sourceMappingURL=project-policy.js.map
